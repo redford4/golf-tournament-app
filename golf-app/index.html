@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b6e4f" />
+  <title>Golf Tournament Scoring</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <!-- Top app bar -->
+  <header id="appbar" class="appbar" hidden>
+    <button id="nav-toggle" class="appbar-btn" aria-label="Menu">&#9776;</button>
+    <div class="appbar-title" id="appbar-title">Golf Tournament</div>
+    <button id="appbar-logout" class="appbar-btn" aria-label="Sign out">Sign out</button>
+  </header>
+
+  <!-- Slide-out navigation -->
+  <nav id="drawer" class="drawer" hidden></nav>
+  <div id="drawer-scrim" class="drawer-scrim" hidden></div>
+
+  <main id="view" class="view"></main>
+
+  <div id="toast-host" class="toast-host"></div>
+
+  <!-- Scripts: classic (non-module) so the app runs straight from file:// -->
+  <script src="js/config.js"></script>
+  <script src="js/golf.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/cloud.js"></script>
+  <script src="js/chrome.js"></script>
+  <script src="js/views-auth.js"></script>
+  <script src="js/views-player.js"></script>
+  <script src="js/views-score.js"></script>
+  <script src="js/views-admin.js"></script>
+  <script src="js/views-leaderboard.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

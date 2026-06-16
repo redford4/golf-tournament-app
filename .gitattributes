@@ -1,0 +1,5 @@
+# Normalize line endings: store text as LF in the repo.
+* text=auto eol=lf
+# Treat these as binary (no line-ending conversion).
+*.png binary
+*.docx binary

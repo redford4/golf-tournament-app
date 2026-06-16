@@ -1,0 +1,11 @@
+# Local dev / scratch — not part of the app
+prd_extracted.txt
+unpacked_prd/
+.claude/
+.mcp.json
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
