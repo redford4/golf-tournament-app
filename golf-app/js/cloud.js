@@ -52,10 +52,14 @@
       res.forEach(function (r) { if (r.error) throw r.error; });
       var tournRows = res[0].data || [], roundRows = res[1].data || [], playerRows = res[2].data || [], scoreRows = res[3].data || [];
 
+      // Inject each row's primary key into its JSON, in case an older record
+      // stored the id only as the row key (e.g. the original single tournament).
+      function withId(row) { var d = row.data || {}; if (d.id == null) d.id = row.id; return d; }
+
       var cache = GT.db.blankCache();
-      cache.tournaments = tournRows.map(function (t) { return t.data; });
-      cache.rounds = roundRows.map(function (r) { return r.data; });
-      cache.players = playerRows.map(function (p) { return p.data; });
+      cache.tournaments = tournRows.map(withId);
+      cache.rounds = roundRows.map(withId);
+      cache.players = playerRows.map(withId);
       cache.scores = {};
       scoreRows.forEach(function (s) { cache.scores[s.id] = s.data; });
 
