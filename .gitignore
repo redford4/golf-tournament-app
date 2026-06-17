@@ -4,6 +4,9 @@ unpacked_prd/
 .claude/
 .mcp.json
 
+# Data backups (may contain password hashes — keep out of the public repo)
+cloud-backup*.json
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db

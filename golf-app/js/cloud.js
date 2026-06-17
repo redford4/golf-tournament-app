@@ -44,40 +44,38 @@
   function fetchAll() {
     var c = getClient();
     return Promise.all([
-      c.from('tournaments').select('*').eq('id', 'main').maybeSingle(),
+      c.from('tournaments').select('*'),
       c.from('rounds').select('*'),
       c.from('players').select('*'),
       c.from('scores').select('*')
     ]).then(function (res) {
       res.forEach(function (r) { if (r.error) throw r.error; });
-      var tRow = res[0].data, roundRows = res[1].data || [], playerRows = res[2].data || [], scoreRows = res[3].data || [];
+      var tournRows = res[0].data || [], roundRows = res[1].data || [], playerRows = res[2].data || [], scoreRows = res[3].data || [];
 
       var cache = GT.db.blankCache();
-      if (tRow && tRow.data) cache.tournament = tRow.data;
-
-      cache.rounds = roundRows
-        .map(function (r) { return r.data; })
-        .sort(function (a, b) { return (a.index || 0) - (b.index || 0); });
-
+      cache.tournaments = tournRows.map(function (t) { return t.data; });
+      cache.rounds = roundRows.map(function (r) { return r.data; });
       cache.players = playerRows.map(function (p) { return p.data; });
-
       cache.scores = {};
       scoreRows.forEach(function (s) { cache.scores[s.id] = s.data; });
 
-      return { cache: cache, tournamentNew: !tRow };
+      return { cache: cache };
     });
   }
 
   function bootstrap() {
     if (!enabled()) return Promise.resolve(false);
     return loadSdk().then(fetchAll).then(function (out) {
-      // Hydrate the data layer, then make sure the tournament row + round slots
-      // exist in the cloud (first run seeds them).
-      var created = GT.db._hydrate(out.cache);
-      var seeds = [];
-      if (out.tournamentNew) seeds.push(upsertTournament(out.cache.tournament));
-      created.newRounds.forEach(function (r) { seeds.push(upsertRound(r)); });
-      return Promise.all(seeds).then(function () { return true; });
+      // Hydrate the data layer; if the cloud held an older (v1) shape it gets
+      // migrated to v2 here and written back. Newly created round slots are
+      // also pushed.
+      var res = GT.db._hydrate(out.cache);
+      if (res.migrated) {
+        GT.db.pushAll();
+      } else {
+        res.newRounds.forEach(function (r) { upsertRound(r); });
+      }
+      return true;
     });
   }
 
@@ -94,7 +92,7 @@
     }, function (e) { console.error('[cloud]', e); });
   }
 
-  function upsertTournament(t) { return ok('tournaments', { id: 'main', data: t, updated_at: new Date().toISOString() }); }
+  function upsertTournament(t) { return ok('tournaments', { id: t.id, data: t, updated_at: new Date().toISOString() }); }
   function upsertRound(r) { return ok('rounds', { id: r.id, idx: r.index || 0, data: r, updated_at: new Date().toISOString() }); }
   function upsertPlayer(p) { return ok('players', { id: p.id, data: p, updated_at: new Date().toISOString() }); }
   function upsertScore(s) {

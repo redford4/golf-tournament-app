@@ -142,7 +142,7 @@
 
   // ---- Session state ----------------------------------------------------
   var SESSION_KEY = 'golf_session_v1';
-  var state = { role: null, playerId: null, expiresAt: 0 };
+  var state = { role: null, playerId: null, tournamentId: null, expiresAt: 0 };
 
   function loadSession() {
     try {
@@ -155,19 +155,23 @@
     return state;
   }
   function saveSession() {
-    var hours = (GT.db.getTournament().sessionHours) || 4;
+    var t = GT.db.getActiveTournament && GT.db.getActiveTournament();
+    var hours = (t && t.sessionHours) || 4;
     state.expiresAt = Date.now() + hours * 3600 * 1000;
     try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(state)); } catch (e) {}
     try { localStorage.setItem(SESSION_KEY, JSON.stringify(state)); } catch (e) {}
   }
   function setRole(role) { state.role = role; saveSession(); }
   function setPlayer(id) { state.playerId = id; saveSession(); }
+  function setTournament(id) { state.tournamentId = id; GT.db.setActiveTournament(id); saveSession(); }
   function logout() {
-    state = { role: null, playerId: null, expiresAt: 0 };
+    state = { role: null, playerId: null, tournamentId: null, expiresAt: 0 };
+    GT.db.setActiveTournament(null);
     try { sessionStorage.removeItem(SESSION_KEY); localStorage.removeItem(SESSION_KEY); } catch (e) {}
     GT.router.go('login');
   }
   function isAdmin() { return state.role === 'admin'; }
+  function isViewer() { return state.role === 'viewer'; }
   function currentPlayer() { return state.playerId ? GT.db.getPlayer(state.playerId) : null; }
 
   // ---- Router (hash based) ---------------------------------------------
@@ -205,9 +209,12 @@
   function render() {
     var route = parseHash();
     loadSession();
+    // Keep the data layer scoped to the session's active tournament.
+    GT.db.setActiveTournament(state.tournamentId || null);
 
-    // Auth gate: everything except login requires a role
-    if (route.name !== 'login' && !state.role) {
+    // Auth gate: everything except these public routes requires a role
+    var PUBLIC = { login: 1, createtournament: 1 };
+    if (!PUBLIC[route.name] && !state.role) {
       go('login');
       return;
     }
@@ -238,7 +245,8 @@
   GT.state = {
     get: function () { return state; },
     load: loadSession, save: saveSession, setRole: setRole, setPlayer: setPlayer,
-    logout: logout, isAdmin: isAdmin, currentPlayer: currentPlayer
+    setTournament: setTournament, logout: logout, isAdmin: isAdmin, isViewer: isViewer,
+    currentPlayer: currentPlayer
   };
   GT.router = { register: register, go: go, render: render, parseHash: parseHash };
 })(window.GT = window.GT || {});

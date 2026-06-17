@@ -13,8 +13,8 @@
 
   // ---- Demo data --------------------------------------------------------
   GT.seedDemo = function () {
-    db.resetTournament();
-    db.updateTournament({ name: 'Marbella Golf Week 2026', numRounds: 4, playerCode: 'golf', adminCode: 'admin' });
+    var t = db.createTournament({ name: 'Marbella Golf Week 2026', numRounds: 4, adminCode: 'admin', joinCode: 'golf' });
+    db.setActiveTournament(t.id);
     var rounds = db.getRounds();
     var parA = [4,4,5,3,4,4,3,5,4, 4,3,4,5,4,4,3,4,5];
     var siA  = [7,5,11,17,1,9,15,3,13, 8,18,2,12,6,10,16,4,14];
@@ -35,7 +35,9 @@
     // All demo players use the password "golf" so you can try player sign-in.
     var players = people.map(function (p) {
       p.passwordHash = GT.hashPassword('golf');
-      return db.addPlayer(p);
+      var rec = db.addPlayer(p);
+      db.addMember(t.id, rec.id); // join them to the demo tournament
+      return rec;
     });
 
     // Round 1: hole-by-hole for everyone
@@ -62,6 +64,7 @@
     var rec2c = db.blankScore(r2.id, players[1].id, 'B'); rec2c.summaryGross = 84; rec2c.summaryStableford = 38; db.saveScore(rec2c);
 
     GT.toast('Demo tournament loaded', 'success');
+    return t;
   };
 
   // ---- Service worker (no-op on file://) --------------------------------

@@ -1,17 +1,27 @@
 /*
- * db.js — Local-first storage layer (localStorage).
+ * db.js — Local-first storage layer (localStorage) with optional cloud sync.
  *
- * The whole tournament lives in one JSON blob under a single key. localStorage
- * is used (not IndexedDB) because it works reliably from file:// across every
- * browser, and the data — players, rounds, scores — is small JSON.
+ * v2 data model (multi-tournament):
+ *   - tournaments[]: each has its own adminCode + joinCode + members map.
+ *   - players[]:     GLOBAL accounts (username/password); a player can belong
+ *                    to many tournaments.
+ *   - rounds[]:      each tagged with tournamentId.
+ *   - scores{}:      keyed "<roundId>:<playerId>", tagged with tournamentId.
  *
- * Attaches to GT.db.
+ * Most accessors (getTournament/getRounds/getPlayers/…) operate on the
+ * "active" tournament so the per-tournament screens work unchanged; a set of
+ * by-id and membership helpers manage the wider platform.
+ *
+ * A v1 (single-tournament) save is migrated to v2 automatically on load.
  */
 (function (GT) {
   'use strict';
 
-  var KEY = 'golf_tournament_v1';
-  var SCHEMA_VERSION = 1;
+  var KEY = 'golf_tournament_v1'; // storage key kept for continuity
+  var SCHEMA_VERSION = 2;
+
+  var cache = null;
+  var activeTid = null; // currently selected tournament id
 
   function uid(prefix) {
     return (prefix || 'id') + '_' + Date.now().toString(36) + '_' +
@@ -21,120 +31,37 @@
   function defaultData() {
     return {
       version: SCHEMA_VERSION,
-      tournament: {
-        name: 'My Golf Tournament',
-        numRounds: 4,
-        playerCode: 'golf',
-        adminCode: 'admin',
-        estimateNetForSummary: false, // PRD 7.3.2 admin option
-        sessionHours: 4,
-        createdAt: Date.now(),
-        updatedAt: Date.now()
-      },
-      rounds: [],   // [{ id, index, courseName, date, teeColour, numHoles,
-                    //    courseRating, slopeRating, par[], strokeIndex[], yardage[],
-                    //    imageDataUrl, configured }]
-      players: [],  // [{ id, fullName, handicapIndex, cdhId, createdAt }]
-      scores: {},   // key `${roundId}:${playerId}` -> score record
-      auditLog: []  // [{ ts, message }]
+      tournaments: [], // {id,name,numRounds,adminCode,joinCode,estimateNetForSummary,sessionHours,members,createdAt,updatedAt}
+      players: [],     // {id,fullName,handicapIndex,cdhId,username,passwordHash,createdAt}
+      rounds: [],      // {id,tournamentId,index,courseName,...,configured}
+      scores: {},      // "<roundId>:<playerId>" -> {roundId,playerId,tournamentId,mode,holes,...}
+      auditLog: []
     };
   }
 
-  var cache = null;
-
-  function load() {
-    if (cache) return cache;
-    var raw = null;
-    try { raw = window.localStorage.getItem(KEY); } catch (e) { raw = null; }
-    if (!raw) {
-      cache = defaultData();
-      ensureRounds();
-      save();
-      return cache;
-    }
-    try {
-      cache = JSON.parse(raw);
-    } catch (e) {
-      console.error('Corrupt save data, starting fresh', e);
-      cache = defaultData();
-    }
-    if (!cache.version) cache = defaultData();
-    ensureRounds();
-    return cache;
+  function blankTournament(data) {
+    data = data || {};
+    return {
+      id: data.id || uid('tourn'),
+      name: data.name || 'New Tournament',
+      numRounds: data.numRounds || 4,
+      adminCode: data.adminCode || '',
+      joinCode: data.joinCode || '',
+      estimateNetForSummary: !!data.estimateNetForSummary,
+      sessionHours: data.sessionHours || 4,
+      members: data.members || {}, // playerId -> { status:'member'|'blocked', joinedAt }
+      createdAt: data.createdAt || Date.now(),
+      updatedAt: Date.now()
+    };
   }
 
-  function save() {
-    if (!cache) return;
-    cache.tournament.updatedAt = Date.now();
-    try {
-      window.localStorage.setItem(KEY, JSON.stringify(cache));
-    } catch (e) {
-      console.error('Save failed (storage full?)', e);
-      GT.toast && GT.toast('Could not save — storage may be full.', 'error');
-    }
-  }
-
-  /** Make sure there is one round slot per configured round number.
-   *  Returns the list of round slots it newly created (for cloud seeding). */
-  function ensureRounds() {
-    var n = cache.tournament.numRounds;
-    var created = [];
-    if (!Array.isArray(cache.rounds)) cache.rounds = [];
-    // Add missing round slots
-    for (var i = cache.rounds.length; i < n; i++) {
-      var nr = blankRound(i + 1);
-      cache.rounds.push(nr);
-      created.push(nr);
-    }
-    // Trim extra rounds beyond configured count (only if unconfigured)
-    while (cache.rounds.length > n) {
-      var last = cache.rounds[cache.rounds.length - 1];
-      if (last.configured) break; // never silently delete configured rounds
-      cache.rounds.pop();
-    }
-    // Re-index
-    cache.rounds.forEach(function (r, idx) { r.index = idx + 1; });
-    return created;
-  }
-
-  // ---- Cloud sync helpers (no-ops unless cloud mode is configured) -------
-  function cloudOn() { return GT.cloud && GT.cloud.enabled(); }
-  function pushTournament() { if (cloudOn()) GT.cloud.upsertTournament(cache.tournament); }
-  function pushRound(r) { if (cloudOn()) GT.cloud.upsertRound(r); }
-  function pushPlayer(p) { if (cloudOn()) GT.cloud.upsertPlayer(p); }
-  function pushScore(s) { if (cloudOn()) GT.cloud.upsertScore(s); }
-  /** Upsert the entire current state to the cloud (used after import/reset). */
-  function pushAll() {
-    if (!cloudOn()) return;
-    pushTournament();
-    cache.rounds.forEach(pushRound);
-    cache.players.forEach(pushPlayer);
-    Object.keys(cache.scores).forEach(function (k) { pushScore(cache.scores[k]); });
-  }
-
-  /** Returns a fresh empty data structure (used by the cloud adapter). */
-  function blankCache() { return defaultData(); }
-
-  /** Replace the in-memory cache (called by the cloud adapter at boot/refresh).
-   *  Returns the round slots it had to create so the caller can seed them. */
-  function _hydrate(newCache) {
-    cache = newCache;
-    if (!cache.version) cache = defaultData();
-    var created = ensureRounds();
-    save(); // keep a local offline copy
-    return { newRounds: created };
-  }
-
-  function blankRound(index) {
+  function blankRound(tournamentId, index) {
     return {
       id: uid('round'),
+      tournamentId: tournamentId,
       index: index,
-      courseName: '',
-      date: '',
-      teeColour: '',
-      numHoles: 18,
-      courseRating: null,
-      slopeRating: null,
+      courseName: '', date: '', teeColour: '', numHoles: 18,
+      courseRating: null, slopeRating: null,
       par: new Array(18).fill(null),
       strokeIndex: new Array(18).fill(null),
       yardage: new Array(18).fill(null),
@@ -143,21 +70,206 @@
     };
   }
 
-  // ---- Tournament -------------------------------------------------------
-  function getTournament() { return load().tournament; }
-  function updateTournament(patch) {
-    var t = load().tournament;
-    Object.assign(t, patch);
+  // ---- Migration v1 -> v2 ----------------------------------------------
+  /** Normalise any older shape into v2 in place. Returns true if it changed. */
+  function migrateCache(c) {
+    var changed = false;
+
+    // (a) Oldest local shape: a single `tournament` object.
+    if (c.tournament && !c.tournaments) {
+      var old = c.tournament;
+      var t = blankTournament({
+        id: 'main', name: old.name, numRounds: old.numRounds,
+        adminCode: old.adminCode, joinCode: old.playerCode || old.joinCode,
+        estimateNetForSummary: old.estimateNetForSummary, sessionHours: old.sessionHours,
+        createdAt: old.createdAt
+      });
+      t.legacyGrant = true; // every existing player belonged to this one tournament
+      c.tournaments = [t];
+      delete c.tournament;
+      changed = true;
+    }
+    if (!Array.isArray(c.tournaments)) { c.tournaments = []; changed = true; }
+    if (!Array.isArray(c.rounds)) { c.rounds = []; changed = true; }
+    if (!Array.isArray(c.players)) { c.players = []; changed = true; }
+    if (!c.scores) { c.scores = {}; changed = true; }
+
+    // (b) Cloud v1 shape: tournaments exist but lack the v2 fields. A tournament
+    //     that still has a `playerCode` is a pre-v2 one whose existing players
+    //     should all be granted membership (flagged for the one-time grant in
+    //     _hydrate, never on routine refreshes).
+    c.tournaments.forEach(function (t) {
+      if (t.playerCode != null) { if (t.joinCode == null) t.joinCode = t.playerCode; delete t.playerCode; t.legacyGrant = true; changed = true; }
+      if (t.members == null) { t.members = {}; changed = true; }
+      if (t.joinCode == null) { t.joinCode = ''; changed = true; }
+    });
+
+    // (c) Untagged rounds/scores -> assign to a tournament. If there is exactly
+    //     one tournament, everything belongs to it (the common migration case).
+    var soleTid = c.tournaments.length === 1 ? c.tournaments[0].id : null;
+    c.rounds.forEach(function (r) {
+      if (!r.tournamentId) { r.tournamentId = soleTid; changed = true; }
+    });
+    Object.keys(c.scores).forEach(function (k) {
+      var s = c.scores[k];
+      if (!s.tournamentId) {
+        var rd = c.rounds.filter(function (r) { return r.id === s.roundId; })[0];
+        s.tournamentId = (rd && rd.tournamentId) || soleTid;
+        changed = true;
+      }
+    });
+
+    if (c.version !== SCHEMA_VERSION) { c.version = SCHEMA_VERSION; changed = true; }
+    return changed;
+  }
+
+  /** One-time member grant for tournaments migrated from v1 (flagged legacyGrant).
+   *  Every existing player was a member of the single old tournament. Runs at
+   *  hydrate (where the full player list is present), not on every refresh. */
+  function applyLegacyGrants(c) {
+    var granted = false;
+    c.tournaments.forEach(function (t) {
+      if (!t.legacyGrant) return;
+      c.players.forEach(function (p) {
+        if (!t.members[p.id]) t.members[p.id] = { status: 'member', joinedAt: p.createdAt || Date.now() };
+      });
+      delete t.legacyGrant;
+      granted = true;
+    });
+    return granted;
+  }
+
+  // ---- Load / save ------------------------------------------------------
+  function load() {
+    if (cache) return cache;
+    var raw = null;
+    try { raw = window.localStorage.getItem(KEY); } catch (e) { raw = null; }
+    if (!raw) { cache = defaultData(); save(); return cache; }
+    try { cache = JSON.parse(raw); } catch (e) { console.error('Corrupt save data', e); cache = defaultData(); }
+    migrateCache(cache);
+    cache.tournaments.forEach(function (t) { ensureRoundsFor(t.id); });
+    return cache;
+  }
+
+  function save() {
+    if (!cache) return;
+    try { window.localStorage.setItem(KEY, JSON.stringify(cache)); }
+    catch (e) { console.error('Save failed', e); GT.toast && GT.toast('Could not save — storage may be full.', 'error'); }
+  }
+
+  function blankCache() { return defaultData(); }
+
+  /** Replace the in-memory cache (cloud adapter at boot/refresh).
+   *  Migrates if needed and ensures round slots. Returns {migrated, newRounds}. */
+  function _hydrate(newCache) {
+    cache = newCache || defaultData();
+    var migrated = migrateCache(cache);
+    var granted = applyLegacyGrants(cache);
     var created = [];
-    if (patch.numRounds != null) created = ensureRounds();
+    cache.tournaments.forEach(function (t) { created = created.concat(ensureRoundsFor(t.id)); });
     save();
-    pushTournament();
+    return { migrated: migrated || granted, newRounds: created };
+  }
+
+  // ---- Cloud sync helpers (no-ops unless configured) --------------------
+  function cloudOn() { return GT.cloud && GT.cloud.enabled(); }
+  function pushTournament(t) { if (cloudOn() && t) GT.cloud.upsertTournament(t); }
+  function pushRound(r) { if (cloudOn() && r) GT.cloud.upsertRound(r); }
+  function pushPlayer(p) { if (cloudOn() && p) GT.cloud.upsertPlayer(p); }
+  function pushScore(s) { if (cloudOn() && s) GT.cloud.upsertScore(s); }
+  function pushAll() {
+    if (!cloudOn()) return;
+    cache.tournaments.forEach(pushTournament);
+    cache.rounds.forEach(pushRound);
+    cache.players.forEach(pushPlayer);
+    Object.keys(cache.scores).forEach(function (k) { pushScore(cache.scores[k]); });
+  }
+
+  // ---- Active tournament context ---------------------------------------
+  function setActiveTournament(id) { activeTid = id; }
+  function getActiveTournamentId() { return activeTid; }
+  function getActiveTournament() { return getTournamentById(activeTid); }
+
+  // ---- Tournaments ------------------------------------------------------
+  function getTournaments() { return load().tournaments; }
+  function getTournamentById(id) {
+    return load().tournaments.filter(function (t) { return t.id === id; })[0] || null;
+  }
+  /** Back-compat: "the tournament" = the active one. */
+  function getTournament() { return getActiveTournament(); }
+
+  function createTournament(data) {
+    var t = blankTournament(data);
+    load().tournaments.push(t);
+    var created = ensureRoundsFor(t.id);
+    save();
+    pushTournament(t);
     created.forEach(pushRound);
     return t;
   }
+  function updateTournamentById(id, patch) {
+    var t = getTournamentById(id);
+    if (!t) return null;
+    Object.assign(t, patch);
+    t.updatedAt = Date.now();
+    var created = [];
+    if (patch.numRounds != null) created = ensureRoundsFor(id);
+    save();
+    pushTournament(t);
+    created.forEach(pushRound);
+    return t;
+  }
+  /** Back-compat: update the active tournament. */
+  function updateTournament(patch) { return updateTournamentById(activeTid, patch); }
 
-  // ---- Rounds -----------------------------------------------------------
-  function getRounds() { return load().rounds; }
+  function deleteTournament(id) {
+    var d = load();
+    var rounds = d.rounds.filter(function (r) { return r.tournamentId === id; });
+    // remove scores for those rounds
+    var removedScoreKeys = [];
+    Object.keys(d.scores).forEach(function (k) {
+      if (d.scores[k].tournamentId === id) { removedScoreKeys.push(k); delete d.scores[k]; }
+    });
+    d.rounds = d.rounds.filter(function (r) { return r.tournamentId !== id; });
+    d.tournaments = d.tournaments.filter(function (t) { return t.id !== id; });
+    save();
+    if (cloudOn()) {
+      removedScoreKeys.forEach(function (k) { GT.cloud.removeRow('scores', k); });
+      rounds.forEach(function (r) { GT.cloud.removeRow('rounds', r.id); });
+      GT.cloud.removeRow('tournaments', id);
+    }
+  }
+
+  /** Clear all scores for a tournament (keeps courses + members). */
+  function clearScores(id) {
+    var d = load();
+    var removed = [];
+    Object.keys(d.scores).forEach(function (k) {
+      if (d.scores[k].tournamentId === id) { removed.push(k); delete d.scores[k]; }
+    });
+    save();
+    if (cloudOn()) removed.forEach(function (k) { GT.cloud.removeRow('scores', k); });
+  }
+
+  function findTournamentByJoinCode(code) {
+    if (!code) return null;
+    var c = code.trim().toLowerCase();
+    return load().tournaments.filter(function (t) {
+      return t.joinCode && t.joinCode.toLowerCase() === c;
+    })[0] || null;
+  }
+
+  // ---- Rounds (scoped to active tournament) ----------------------------
+  function getRounds() {
+    return load().rounds
+      .filter(function (r) { return r.tournamentId === activeTid; })
+      .sort(function (a, b) { return a.index - b.index; });
+  }
+  function getRoundsFor(tid) {
+    return load().rounds
+      .filter(function (r) { return r.tournamentId === tid; })
+      .sort(function (a, b) { return a.index - b.index; });
+  }
   function getRound(id) {
     return load().rounds.filter(function (r) { return r.id === id; })[0] || null;
   }
@@ -169,15 +281,37 @@
     pushRound(r);
     return r;
   }
+  /** Ensure a tournament has one round slot per its numRounds. Returns new ones. */
+  function ensureRoundsFor(tid) {
+    var t = getTournamentById(tid);
+    if (!t) return [];
+    var rounds = load().rounds.filter(function (r) { return r.tournamentId === tid; })
+      .sort(function (a, b) { return a.index - b.index; });
+    var created = [];
+    for (var i = rounds.length; i < t.numRounds; i++) {
+      var nr = blankRound(tid, i + 1);
+      cache.rounds.push(nr); rounds.push(nr); created.push(nr);
+    }
+    // trim trailing unconfigured rounds beyond numRounds
+    while (rounds.length > t.numRounds) {
+      var last = rounds[rounds.length - 1];
+      if (last.configured) break;
+      cache.rounds = cache.rounds.filter(function (r) { return r.id !== last.id; });
+      rounds.pop();
+      if (cloudOn()) GT.cloud.removeRow('rounds', last.id);
+    }
+    rounds.forEach(function (r, idx) { r.index = idx + 1; });
+    return created;
+  }
 
-  // ---- Players ----------------------------------------------------------
-  function getPlayers() { return load().players; }
+  // ---- Players (GLOBAL accounts) ---------------------------------------
+  function getAllPlayers() { return load().players; }
   function getPlayer(id) {
     return load().players.filter(function (p) { return p.id === id; })[0] || null;
   }
   function addPlayer(data) {
     var p = {
-      id: uid('player'),
+      id: data.id || uid('player'),
       fullName: data.fullName,
       handicapIndex: data.handicapIndex,
       cdhId: data.cdhId || '',
@@ -198,37 +332,36 @@
     pushPlayer(p);
     return p;
   }
+  /** Remove a global account: from all tournaments' members and all their scores. */
   function removePlayer(id) {
     var d = load();
     d.players = d.players.filter(function (p) { return p.id !== id; });
-    // Remove that player's scores too
     var removedScoreKeys = [];
     Object.keys(d.scores).forEach(function (k) {
       if (k.indexOf(':' + id) > -1) { removedScoreKeys.push(k); delete d.scores[k]; }
+    });
+    var touchedTournaments = [];
+    d.tournaments.forEach(function (t) {
+      if (t.members && t.members[id]) { delete t.members[id]; touchedTournaments.push(t); }
     });
     save();
     if (cloudOn()) {
       GT.cloud.removeRow('players', id);
       removedScoreKeys.forEach(function (k) { GT.cloud.removeRow('scores', k); });
+      touchedTournaments.forEach(pushTournament);
     }
   }
-  /** Returns the player record with a duplicate CDH ID, if any (PRD 4.2). */
   function findDuplicateCdh(cdhId, exceptId) {
     if (!cdhId) return null;
     return load().players.filter(function (p) {
-      return p.id !== exceptId && p.cdhId &&
-        p.cdhId.toLowerCase() === cdhId.toLowerCase();
+      return p.id !== exceptId && p.cdhId && p.cdhId.toLowerCase() === cdhId.toLowerCase();
     })[0] || null;
   }
-  /** Find a player by username (case-insensitive), for login. */
   function findPlayerByUsername(username) {
     if (!username) return null;
     var u = username.trim().toLowerCase();
-    return load().players.filter(function (p) {
-      return p.username && p.username.toLowerCase() === u;
-    })[0] || null;
+    return load().players.filter(function (p) { return p.username && p.username.toLowerCase() === u; })[0] || null;
   }
-  /** Another player already using this username? (usernames must be unique). */
   function findDuplicateUsername(username, exceptId) {
     if (!username) return null;
     var u = username.trim().toLowerCase();
@@ -237,26 +370,86 @@
     })[0] || null;
   }
 
+  // ---- Membership -------------------------------------------------------
+  function getMembership(tid, pid) {
+    var t = getTournamentById(tid);
+    return (t && t.members && t.members[pid]) || null;
+  }
+  function isMember(tid, pid) {
+    var m = getMembership(tid, pid);
+    return !!(m && m.status === 'member');
+  }
+  function isBlocked(tid, pid) {
+    var m = getMembership(tid, pid);
+    return !!(m && m.status === 'blocked');
+  }
+  /** Members of a tournament as [{player, status, joinedAt}] (existing accounts). */
+  function getMembers(tid) {
+    var t = getTournamentById(tid);
+    if (!t || !t.members) return [];
+    return Object.keys(t.members).map(function (pid) {
+      var p = getPlayer(pid);
+      return p ? { player: p, status: t.members[pid].status, joinedAt: t.members[pid].joinedAt } : null;
+    }).filter(Boolean);
+  }
+  /** Players (member status) of the ACTIVE tournament — used by scoring/leaderboards. */
+  function getPlayers() {
+    var t = getActiveTournament();
+    if (!t || !t.members) return [];
+    return Object.keys(t.members)
+      .filter(function (pid) { return t.members[pid].status === 'member'; })
+      .map(function (pid) { return getPlayer(pid); })
+      .filter(Boolean);
+  }
+  function setMemberStatus(tid, pid, status) {
+    var t = getTournamentById(tid);
+    if (!t) return;
+    t.members = t.members || {};
+    if (status == null) delete t.members[pid];
+    else t.members[pid] = { status: status, joinedAt: (t.members[pid] && t.members[pid].joinedAt) || Date.now() };
+    t.updatedAt = Date.now();
+    save();
+    pushTournament(t);
+  }
+  function addMember(tid, pid) { setMemberStatus(tid, pid, 'member'); }
+  function removeMember(tid, pid) { setMemberStatus(tid, pid, null); }
+  function blockMember(tid, pid) { setMemberStatus(tid, pid, 'blocked'); }
+
+  /** Join a tournament by its code. Returns {ok, tournament, reason}. */
+  function joinTournamentByCode(code, pid) {
+    var t = findTournamentByJoinCode(code);
+    if (!t) return { ok: false, reason: 'notfound' };
+    if (isBlocked(t.id, pid)) return { ok: false, reason: 'blocked', tournament: t };
+    addMember(t.id, pid);
+    return { ok: true, tournament: t };
+  }
+  /** Tournaments a player is currently a member of. */
+  function getPlayerTournaments(pid) {
+    return load().tournaments.filter(function (t) {
+      return t.members && t.members[pid] && t.members[pid].status === 'member';
+    });
+  }
+
   // ---- Scores -----------------------------------------------------------
   function scoreKey(roundId, playerId) { return roundId + ':' + playerId; }
-
-  function getScore(roundId, playerId) {
-    return load().scores[scoreKey(roundId, playerId)] || null;
-  }
+  function getScore(roundId, playerId) { return load().scores[scoreKey(roundId, playerId)] || null; }
   function blankScore(roundId, playerId, mode) {
+    var rd = getRound(roundId);
     return {
-      roundId: roundId,
-      playerId: playerId,
+      roundId: roundId, playerId: playerId,
+      tournamentId: (rd && rd.tournamentId) || activeTid,
       mode: mode || 'A',
-      holes: new Array(18).fill(null), // gross per hole; null = not entered / NR
-      summaryGross: null,
-      summaryStableford: null,
-      locked: false,
-      updatedAt: Date.now()
+      holes: new Array(18).fill(null),
+      summaryGross: null, summaryStableford: null,
+      locked: false, updatedAt: Date.now()
     };
   }
   function saveScore(record) {
     record.updatedAt = Date.now();
+    if (!record.tournamentId) {
+      var rd = getRound(record.roundId);
+      record.tournamentId = (rd && rd.tournamentId) || activeTid;
+    }
     load().scores[scoreKey(record.roundId, record.playerId)] = record;
     save();
     pushScore(record);
@@ -268,60 +461,48 @@
     if (cloudOn()) GT.cloud.removeRow('scores', scoreKey(roundId, playerId));
   }
 
-  // ---- Audit log --------------------------------------------------------
+  // ---- Audit log (global, local-only) ----------------------------------
   function logAdmin(message) {
-    load().auditLog.unshift({ ts: Date.now(), message: message });
+    load().auditLog.unshift({ ts: Date.now(), message: message, tournamentId: activeTid });
     if (cache.auditLog.length > 500) cache.auditLog.length = 500;
     save();
   }
-  function getAuditLog() { return load().auditLog; }
+  function getAuditLog() {
+    return load().auditLog.filter(function (e) { return !activeTid || !e.tournamentId || e.tournamentId === activeTid; });
+  }
 
   // ---- Whole-DB ops -----------------------------------------------------
   function exportJSON() { return JSON.stringify(load(), null, 2); }
   function importJSON(json) {
     var parsed = JSON.parse(json);
-    if (!parsed.version) throw new Error('Not a valid tournament file.');
+    if (!parsed.version && !parsed.tournament && !parsed.tournaments) throw new Error('Not a valid tournament file.');
     cache = parsed;
-    ensureRounds();
+    migrateCache(cache);
+    cache.tournaments.forEach(function (t) { ensureRoundsFor(t.id); });
     save();
-    pushAll(); // mirror the restored tournament to the cloud
-  }
-  function resetTournament() {
-    if (cloudOn()) GT.cloud.wipeAll();
-    cache = defaultData();
-    ensureRounds();
-    save();
-    pushAll(); // seed the fresh tournament in the cloud
+    pushAll();
   }
 
   GT.db = {
-    uid: uid,
-    load: load,
-    save: save,
-    blankCache: blankCache,
-    _hydrate: _hydrate,
-    pushAll: pushAll,
-    getTournament: getTournament,
-    updateTournament: updateTournament,
-    getRounds: getRounds,
-    getRound: getRound,
-    updateRound: updateRound,
-    getPlayers: getPlayers,
-    getPlayer: getPlayer,
-    addPlayer: addPlayer,
-    updatePlayer: updatePlayer,
-    removePlayer: removePlayer,
-    findDuplicateCdh: findDuplicateCdh,
-    findPlayerByUsername: findPlayerByUsername,
-    findDuplicateUsername: findDuplicateUsername,
-    getScore: getScore,
-    blankScore: blankScore,
-    saveScore: saveScore,
-    deleteScore: deleteScore,
-    logAdmin: logAdmin,
-    getAuditLog: getAuditLog,
-    exportJSON: exportJSON,
-    importJSON: importJSON,
-    resetTournament: resetTournament
+    uid: uid, load: load, save: save, blankCache: blankCache, _hydrate: _hydrate, pushAll: pushAll,
+    // active context
+    setActiveTournament: setActiveTournament, getActiveTournamentId: getActiveTournamentId, getActiveTournament: getActiveTournament,
+    // tournaments
+    getTournaments: getTournaments, getTournamentById: getTournamentById, getTournament: getTournament,
+    createTournament: createTournament, updateTournamentById: updateTournamentById, updateTournament: updateTournament,
+    deleteTournament: deleteTournament, clearScores: clearScores, findTournamentByJoinCode: findTournamentByJoinCode,
+    // rounds
+    getRounds: getRounds, getRoundsFor: getRoundsFor, getRound: getRound, updateRound: updateRound, ensureRoundsFor: ensureRoundsFor,
+    // players (global)
+    getAllPlayers: getAllPlayers, getPlayer: getPlayer, addPlayer: addPlayer, updatePlayer: updatePlayer, removePlayer: removePlayer,
+    findDuplicateCdh: findDuplicateCdh, findPlayerByUsername: findPlayerByUsername, findDuplicateUsername: findDuplicateUsername,
+    // membership
+    getMembership: getMembership, isMember: isMember, isBlocked: isBlocked, getMembers: getMembers, getPlayers: getPlayers,
+    setMemberStatus: setMemberStatus, addMember: addMember, removeMember: removeMember, blockMember: blockMember,
+    joinTournamentByCode: joinTournamentByCode, getPlayerTournaments: getPlayerTournaments,
+    // scores
+    getScore: getScore, blankScore: blankScore, saveScore: saveScore, deleteScore: deleteScore,
+    // misc
+    logAdmin: logAdmin, getAuditLog: getAuditLog, exportJSON: exportJSON, importJSON: importJSON
   };
 })(window.GT = window.GT || {});

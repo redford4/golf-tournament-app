@@ -67,9 +67,14 @@
   // ---- Tournament Home -------------------------------------------------
   GT.router.register('home', function (app) {
     var player = GT.state.currentPlayer();
+
+    // Need a tournament selected to show a home.
+    if (!db.getActiveTournamentId() || !db.getActiveTournament()) {
+      GT.router.go(GT.state.isAdmin() ? 'admin' : 'tournaments'); return;
+    }
     var t = db.getTournament();
 
-    if (!player && !GT.state.isAdmin()) { GT.router.go('register'); return; }
+    if (!player && !GT.state.isAdmin()) { GT.router.go('tournaments'); return; }
 
     if (player) {
       app.appendChild(h('div.card', {}, [

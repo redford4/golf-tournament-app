@@ -1,7 +1,7 @@
 /*
  * chrome.js — App bar + slide-out navigation drawer. Rebuilt on each route so
- * the menu reflects the current role (player vs admin) and highlights the
- * active screen. Attaches to GT.chrome.
+ * the menu reflects the current role (player / organiser / viewer) and the
+ * active tournament. Attaches to GT.chrome.
  */
 (function (GT) {
   'use strict';
@@ -17,8 +17,9 @@
     { name: 'admin', icon: '🛠', label: 'Admin Dashboard' },
     { name: 'setup', icon: '⚙', label: 'Tournament Setup' },
     { name: 'courses', icon: '🗺', label: 'Course Configuration' },
-    { name: 'players', icon: '👥', label: 'Player Management' },
-    { name: 'scores', icon: '📝', label: 'Score Management' }
+    { name: 'members', icon: '👥', label: 'Member Management' },
+    { name: 'scores', icon: '📝', label: 'Score Management' },
+    { name: 'leaderboard', icon: '🏆', label: 'Leaderboards' }
   ];
 
   function openDrawer() {
@@ -39,54 +40,66 @@
 
   function buildDrawer(activeName) {
     var drawer = GT.clear(document.getElementById('drawer'));
-    var t = GT.db.getTournament();
-    var isAdmin = GT.state.isAdmin();
+    var t = GT.db.getActiveTournament();
+    var role = GT.state.get().role;
     var player = GT.state.currentPlayer();
 
     drawer.appendChild(h('div.drawer-header', {}, [
-      h('div.t-name', {}, t.name || 'Golf Tournament'),
-      h('div.t-sub', {}, isAdmin ? 'Admin' : (player ? player.fullName : 'Player'))
+      h('div.t-name', {}, (t && t.name) || 'Golf Tournaments'),
+      h('div.t-sub', {}, role === 'admin' ? 'Organiser' : role === 'viewer' ? 'Viewer (read-only)' : (player ? player.fullName : 'Player'))
     ]));
 
-    var playerSection = h('div.drawer-section', {}, [h('div.label', {}, 'Play')]);
-    PLAYER_NAV.forEach(function (item) { playerSection.appendChild(navLink(item, activeName)); });
-    drawer.appendChild(playerSection);
-
-    if (isAdmin) {
-      var adminSection = h('div.drawer-section', {}, [h('div.label', {}, 'Admin')]);
-      ADMIN_NAV.forEach(function (item) { adminSection.appendChild(navLink(item, activeName)); });
-      drawer.appendChild(adminSection);
+    if (role === 'viewer') {
+      var vsec = h('div.drawer-section', {}, [h('div.label', {}, 'View')]);
+      vsec.appendChild(navLink({ name: 'leaderboard', icon: '🏆', label: 'Leaderboards' }, activeName));
+      drawer.appendChild(vsec);
+      drawer.appendChild(h('div.drawer-section', {}, [
+        h('button.drawer-link', { onclick: function () { closeDrawer(); GT.state.logout(); } }, [h('span.ic', {}, '🔁'), 'View another tournament'])
+      ]));
+      return;
     }
 
-    var footer = h('div.drawer-section', {}, [
-      h('button.drawer-link', { onclick: function () { closeDrawer(); GT.state.logout(); } },
-        [h('span.ic', {}, '⏻'), 'Sign out'])
-    ]);
-    drawer.appendChild(footer);
+    if (role === 'admin') {
+      var asec = h('div.drawer-section', {}, [h('div.label', {}, 'Organiser')]);
+      ADMIN_NAV.forEach(function (item) { asec.appendChild(navLink(item, activeName)); });
+      drawer.appendChild(asec);
+      drawer.appendChild(h('div.drawer-section', {}, [
+        h('button.drawer-link', { onclick: function () { closeDrawer(); GT.state.logout(); } }, [h('span.ic', {}, '⏻'), 'Sign out'])
+      ]));
+      return;
+    }
+
+    // player
+    var psec = h('div.drawer-section', {}, [h('div.label', {}, 'Play')]);
+    PLAYER_NAV.forEach(function (item) { psec.appendChild(navLink(item, activeName)); });
+    drawer.appendChild(psec);
+    drawer.appendChild(h('div.drawer-section', {}, [
+      h('button.drawer-link', { onclick: function () { closeDrawer(); GT.router.go('tournaments'); } }, [h('span.ic', {}, '🔁'), 'Switch tournament']),
+      h('button.drawer-link', { onclick: function () { closeDrawer(); GT.state.logout(); } }, [h('span.ic', {}, '⏻'), 'Sign out'])
+    ]));
   }
 
   function update(route) {
     var appbar = document.getElementById('appbar');
     var loggedIn = !!GT.state.get().role;
+    var noChrome = !loggedIn || route.name === 'login' || route.name === 'register' || route.name === 'createtournament';
 
-    if (!loggedIn || route.name === 'login') {
+    if (noChrome) {
       appbar.hidden = true;
       document.getElementById('drawer').hidden = true;
       document.getElementById('drawer-scrim').hidden = true;
       return;
     }
     appbar.hidden = false;
-    var t = GT.db.getTournament();
-    document.getElementById('appbar-title').textContent = t.name || 'Golf Tournament';
+    var t = GT.db.getActiveTournament();
+    document.getElementById('appbar-title').textContent = (t && t.name) || 'Golf Tournaments';
     buildDrawer(route.name);
   }
 
   function wire() {
     document.getElementById('nav-toggle').addEventListener('click', openDrawer);
     document.getElementById('drawer-scrim').addEventListener('click', closeDrawer);
-    document.getElementById('appbar-logout').addEventListener('click', function () {
-      GT.state.logout();
-    });
+    document.getElementById('appbar-logout').addEventListener('click', function () { GT.state.logout(); });
   }
 
   GT.chrome = { update: update, wire: wire, closeDrawer: closeDrawer };

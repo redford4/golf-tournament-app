@@ -22,15 +22,20 @@
     app.appendChild(h('h1.page-title', {}, 'Admin Dashboard'));
     app.appendChild(h('div.grid3', {}, [
       h('div.card.pill-stat', {}, [h('div.v', {}, rounds.filter(function (r) { return r.configured; }).length + '/' + rounds.length), h('div.k', {}, 'Rounds set up')]),
-      h('div.card.pill-stat', {}, [h('div.v', {}, players.length), h('div.k', {}, 'Players')]),
+      h('div.card.pill-stat', {}, [h('div.v', {}, players.length), h('div.k', {}, 'Members')]),
       h('div.card.pill-stat', {}, [h('div.v', {}, countSubmissions()), h('div.k', {}, 'Scores in')])
     ]));
 
     app.appendChild(h('div.wrap', { style: { marginBottom: '8px' } }, [
       h('button.btn.btn-primary.btn-sm', { onclick: function () { GT.router.go('setup'); } }, '⚙ Setup'),
       h('button.btn.btn-outline.btn-sm', { onclick: function () { GT.router.go('courses'); } }, '🗺 Courses'),
-      h('button.btn.btn-outline.btn-sm', { onclick: function () { GT.router.go('players'); } }, '👥 Players'),
+      h('button.btn.btn-outline.btn-sm', { onclick: function () { GT.router.go('members'); } }, '👥 Members'),
       h('button.btn.btn-outline.btn-sm', { onclick: function () { GT.router.go('scores'); } }, '📝 Scores')
+    ]));
+
+    app.appendChild(h('div.note.note-green', {}, [
+      'Players join “' + t.name + '” with the code ',
+      h('b', {}, t.joinCode || '(set one in Setup)'), '. Share it with your group.'
     ]));
 
     // Completion matrix
@@ -92,8 +97,8 @@
     var f = {
       name: h('input', { type: 'text', value: t.name, placeholder: 'e.g. Marbella Golf Week 2026' }),
       numRounds: h('input', { type: 'number', min: '1', value: t.numRounds }),
-      playerCode: h('input', { type: 'text', value: t.playerCode, autocapitalize: 'off' }),
-      adminCode: h('input', { type: 'text', value: t.adminCode, autocapitalize: 'off' }),
+      joinCode: h('input', { type: 'text', value: t.joinCode, autocapitalize: 'off', spellcheck: 'false' }),
+      adminCode: h('input', { type: 'text', value: t.adminCode, autocapitalize: 'off', spellcheck: 'false' }),
       estimate: h('input', { type: 'checkbox' }),
       sessionHours: h('input', { type: 'number', min: '1', value: t.sessionHours })
     };
@@ -102,13 +107,15 @@
     function save() {
       var name = f.name.value.trim();
       var nr = parseInt(f.numRounds.value, 10);
-      var pc = f.playerCode.value.trim();
+      var jc = f.joinCode.value.trim();
       var ac = f.adminCode.value.trim();
       if (!name) { GT.toast('Tournament name is required.', 'error'); return; }
       if (!nr || nr < 1) { GT.toast('Number of rounds must be at least 1.', 'error'); return; }
-      if (!pc || !ac) { GT.toast('Both access codes are required.', 'error'); return; }
-      if (pc === ac) { GT.toast('Admin code must be different from the player code.', 'error'); return; }
-      db.updateTournament({ name: name, numRounds: nr, playerCode: pc, adminCode: ac,
+      if (!jc || !ac) { GT.toast('Both a join code and an admin code are required.', 'error'); return; }
+      if (jc.toLowerCase() === ac.toLowerCase()) { GT.toast('Admin code must be different from the join code.', 'error'); return; }
+      var clash = db.findTournamentByJoinCode(jc);
+      if (clash && clash.id !== t.id) { GT.toast('That join code is used by another tournament.', 'error'); return; }
+      db.updateTournament({ name: name, numRounds: nr, joinCode: jc, adminCode: ac,
         estimateNetForSummary: f.estimate.checked, sessionHours: parseInt(f.sessionHours.value, 10) || 4 });
       db.logAdmin('Updated tournament settings');
       GT.toast('Settings saved', 'success');
@@ -118,15 +125,17 @@
     app.appendChild(h('div.card.stack', {}, [
       h('div.field', {}, [h('label', {}, 'Tournament Name'), f.name]),
       h('div.field', {}, [h('label', {}, 'Number of Rounds'), f.numRounds,
-        h('div.hint', {}, 'Default 4. Adding rounds creates new empty round slots.')]),
+        h('div.hint', {}, 'Adding rounds creates new empty round slots.')]),
       h('div.grid2', {}, [
-        h('div.field', {}, [h('label', {}, 'Player Access Code'), f.playerCode]),
-        h('div.field', {}, [h('label', {}, 'Admin Access Code'), f.adminCode])
+        h('div.field', {}, [h('label', {}, 'Join Code (players)'), f.joinCode,
+          h('div.hint', {}, 'Players enter this to join.')]),
+        h('div.field', {}, [h('label', {}, 'Admin Code (you)'), f.adminCode,
+          h('div.hint', {}, 'Used to manage this tournament.')])
       ]),
       h('div.field', {}, [
         h('label', { style: { display: 'flex', alignItems: 'center', gap: '10px' } }, [f.estimate,
           h('span', {}, 'Estimate Net for summary scores (gross − course handicap)')]),
-        h('div.hint', {}, 'PRD 7.3.2 — if off, Net shows N/A for summary-entry rounds.')
+        h('div.hint', {}, 'If off, Net shows N/A for summary-entry rounds.')
       ]),
       h('div.field', {}, [h('label', {}, 'Session timeout (hours)'), f.sessionHours]),
       h('button.btn.btn-primary.btn-block', { onclick: save }, 'Save Settings')
@@ -139,10 +148,21 @@
         h('button.btn.btn-outline', { onclick: exportCsv }, '⬇ Export CSV'),
         h('button.btn.btn-outline', { onclick: exportBackup }, '⬇ Backup (JSON)')
       ]),
-      h('button.btn.btn-outline.btn-block', { onclick: importBackup }, '⬆ Restore from backup'),
       h('hr.divider'),
-      h('button.btn.btn-danger.btn-block', { onclick: resetAll }, '⚠ Reset Tournament')
+      h('button.btn.btn-outline.btn-block', { onclick: clearScoresPrompt }, '🧹 Clear all scores'),
+      h('button.btn.btn-danger.btn-block', { onclick: deleteTournamentPrompt }, '⚠ Delete this tournament')
     ]));
+
+    function clearScoresPrompt() {
+      GT.confirm('Clear ALL scores for “' + t.name + '”? Courses and members are kept. This cannot be undone.', function () {
+        db.clearScores(t.id); db.logAdmin('Cleared all scores'); GT.toast('Scores cleared', 'success'); GT.router.go('admin');
+      }, { danger: true, yesLabel: 'Clear scores' });
+    }
+    function deleteTournamentPrompt() {
+      GT.confirm('Permanently delete “' + t.name + '” — its courses, scores and member list? Player accounts are not deleted. Consider a backup first.', function () {
+        var id = t.id; db.deleteTournament(id); GT.toast('Tournament deleted', 'success'); GT.state.logout();
+      }, { danger: true, yesLabel: 'Delete tournament' });
+    }
   });
 
   // ===== Course list =====================================================
@@ -282,39 +302,79 @@
     app.appendChild(h('button.btn.btn-primary.btn-block', { onclick: save }, 'Save Course'));
   });
 
-  // ===== Player management ==============================================
-  GT.router.register('players', function (app) {
+  // ===== Member management ==============================================
+  GT.router.register('members', function (app) {
     if (!requireAdmin(app)) return;
-    app.appendChild(h('h1.page-title', {}, 'Player Management'));
-    var players = db.getPlayers();
-    if (!players.length) app.appendChild(GT.emptyState('👥', 'No players yet', 'Players self-register, or add them here.'));
+    var t = db.getTournament();
+    app.appendChild(h('h1.page-title', {}, 'Member Management'));
+    app.appendChild(h('div.note.note-green', {}, ['Players join with code ', h('b', {}, t.joinCode || '(set in Setup)'),
+      '. You can grant, remove or block access below.']));
+
+    var members = db.getMembers(t.id).sort(function (a, b) { return a.player.fullName.localeCompare(b.player.fullName); });
+    if (!members.length) {
+      app.appendChild(GT.emptyState('👥', 'No members yet', 'Share the join code, or add players below.'));
+    }
 
     var list = h('div.stack');
-    players.forEach(function (p) {
-      var dup = db.findDuplicateCdh(p.cdhId, p.id);
+    members.forEach(function (m) {
+      var p = m.player;
+      var blocked = m.status === 'blocked';
       list.appendChild(h('div.card.card-row', {}, [
         h('div.grow', {}, [h('h3', {}, p.fullName),
-          h('div.muted', {}, 'HI ' + GT.fmtHi(p.handicapIndex) + (p.cdhId ? ' · CDH ' + p.cdhId : '')),
-          h('div.muted', {}, p.username ? ('@' + p.username) : '⚠ no login set'),
-          dup ? h('span.badge.badge-amber', { style: { marginTop: '4px' } }, '⚠ Duplicate CDH') : null]),
+          h('div.muted', {}, 'HI ' + GT.fmtHi(p.handicapIndex) + (p.username ? ' · @' + p.username : '')),
+          blocked ? h('span.badge.badge-red', { style: { marginTop: '4px' } }, 'Blocked') : null]),
         h('div.wrap', {}, [
           h('button.btn.btn-outline.btn-sm', { onclick: function () { editPlayer(p); } }, 'Edit'),
-          h('button.btn.btn-ghost.btn-sm', { onclick: function () { removePlayer(p); } }, '🗑')
+          blocked
+            ? h('button.btn.btn-outline.btn-sm', { onclick: function () { setStatus(p, 'member', 'unblocked'); } }, 'Unblock')
+            : h('button.btn.btn-ghost.btn-sm', { onclick: function () { confirmBlock(p); } }, 'Block'),
+          h('button.btn.btn-ghost.btn-sm', { onclick: function () { confirmRemove(p); } }, 'Remove')
         ])
       ]));
     });
     app.appendChild(list);
-    app.appendChild(h('button.btn.btn-primary.btn-block', { onclick: function () { editPlayer(null); } }, '+ Add player'));
 
+    app.appendChild(h('div.btn-row', { style: { marginTop: '6px' } }, [
+      h('button.btn.btn-primary', { onclick: function () { addExisting(); } }, '+ Add existing player'),
+      h('button.btn.btn-outline', { onclick: function () { editPlayer(null); } }, '+ New player')
+    ]));
+
+    function setStatus(p, status, verb) {
+      db.setMemberStatus(t.id, p.id, status);
+      db.logAdmin((verb || status) + ' ' + p.fullName);
+      GT.toast(p.fullName + ' ' + (verb || status), 'success'); GT.router.render();
+    }
+    function confirmBlock(p) {
+      GT.confirm('Block ' + p.fullName + '? They keep their account and scores but can’t rejoin with the code until unblocked.', function () { setStatus(p, 'blocked', 'blocked'); }, { danger: true, yesLabel: 'Block' });
+    }
+    function confirmRemove(p) {
+      GT.confirm('Remove ' + p.fullName + ' from this tournament? Their scores here are deleted. Their account stays.', function () {
+        // delete their scores in this tournament, then drop membership
+        db.getRoundsFor(t.id).forEach(function (r) { if (db.getScore(r.id, p.id)) db.deleteScore(r.id, p.id); });
+        db.removeMember(t.id, p.id);
+        db.logAdmin('Removed ' + p.fullName + ' from tournament');
+        GT.toast(p.fullName + ' removed', 'success'); GT.router.render();
+      }, { danger: true, yesLabel: 'Remove' });
+    }
     function editPlayer(p) {
       var holder = h('div');
-      GT.registrationForm(holder, { player: p, isAdmin: true, onSaved: function () { close(); GT.router.render(); } });
-      var close = GT.modal({ title: p ? 'Edit player' : 'Add player', body: holder, actions: [{ label: 'Cancel', kind: 'ghost' }] });
+      GT.registrationForm(holder, { player: p, isAdmin: true, onSaved: function (saved) {
+        if (!p && saved) db.addMember(t.id, saved.id); // new account joins this tournament
+        close(); GT.router.render();
+      } });
+      var close = GT.modal({ title: p ? 'Edit player' : 'New player', body: holder, actions: [{ label: 'Cancel', kind: 'ghost' }] });
     }
-    function removePlayer(p) {
-      GT.confirm('Remove ' + p.fullName + ' and all their scores? This cannot be undone.', function () {
-        db.removePlayer(p.id); db.logAdmin('Removed player ' + p.fullName); GT.toast('Player removed', 'success'); GT.router.render();
-      }, { danger: true, yesLabel: 'Remove' });
+    function addExisting() {
+      var nonMembers = db.getAllPlayers().filter(function (p) { return !db.getMembership(t.id, p.id); });
+      if (!nonMembers.length) { GT.toast('No other player accounts to add.', ''); return; }
+      var holder = h('div.stack');
+      nonMembers.sort(function (a, b) { return a.fullName.localeCompare(b.fullName); }).forEach(function (p) {
+        holder.appendChild(h('div.card.tap.card-row', { onclick: function () { db.addMember(t.id, p.id); db.logAdmin('Added ' + p.fullName); close(); GT.toast('Added ' + p.fullName, 'success'); GT.router.render(); } }, [
+          h('div.grow', {}, [h('h3', {}, p.fullName), h('div.muted', {}, 'HI ' + GT.fmtHi(p.handicapIndex) + (p.username ? ' · @' + p.username : ''))]),
+          h('span', {}, '+')
+        ]));
+      });
+      var close = GT.modal({ title: 'Add existing player', body: holder, actions: [{ label: 'Close', kind: 'ghost' }] });
     }
   });
 
@@ -494,27 +554,6 @@
   function exportBackup() {
     downloadFile((db.getTournament().name || 'tournament').replace(/\s+/g, '_') + '_backup.json', db.exportJSON(), 'application/json');
     GT.toast('Backup downloaded', 'success');
-  }
-
-  function importBackup() {
-    var input = h('input', { type: 'file', accept: 'application/json,.json', style: { display: 'none' } });
-    input.addEventListener('change', function () {
-      var file = input.files[0]; if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function () {
-        try { db.importJSON(reader.result); GT.toast('Backup restored', 'success'); GT.router.go('admin'); }
-        catch (e) { GT.toast('Invalid backup file.', 'error'); }
-      };
-      reader.readAsText(file);
-    });
-    document.body.appendChild(input); input.click(); input.remove();
-  }
-
-  function resetAll() {
-    GT.confirm('Reset the ENTIRE tournament? All players, courses and scores will be permanently deleted. Consider downloading a backup first.',
-      function () {
-        db.resetTournament(); GT.state.logout(); GT.toast('Tournament reset', 'success');
-      }, { danger: true, yesLabel: 'Reset everything' });
   }
 
   GT.adminExportCsv = exportCsv;
