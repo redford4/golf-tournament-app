@@ -1,0 +1,5 @@
+# Netlify configuration.
+# The app is a static site living in the golf-app/ folder (no build step).
+[build]
+  publish = "golf-app"
+  command = ""
