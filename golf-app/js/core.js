@@ -256,6 +256,82 @@
     var sw = GT.THEMES.filter(function (t) { return t.id === id; })[0];
     if (meta && sw) meta.setAttribute('content', sw.swatch);
   };
+
+  // ---- Images -----------------------------------------------------------
+  // Resize/recompress an image File to a JPEG Blob, capped at maxDim px.
+  GT.compressImage = function (file, maxDim, quality) {
+    maxDim = maxDim || 1280;
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        URL.revokeObjectURL(url);
+        var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        var cw = Math.max(1, Math.round(img.width * scale)), ch = Math.max(1, Math.round(img.height * scale));
+        var cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+        cv.getContext('2d').drawImage(img, 0, 0, cw, ch);
+        cv.toBlob(function (b) { b ? resolve(b) : reject(new Error('Could not process image')); }, 'image/jpeg', quality || 0.82);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('That file isn’t a readable image.')); };
+      img.src = url;
+    });
+  };
+
+  // Full-screen image viewer.
+  GT.viewImage = function (url, caption) {
+    modal({ title: caption || null, body: h('img', { src: url, style: { width: '100%', borderRadius: '10px' } }) });
+  };
+
+  /**
+   * An image upload control. opts:
+   *   url        current image URL (or falsy)
+   *   pathPrefix storage folder, e.g. 'tournaments/<id>'
+   *   maxDim     max pixels (default 1280)
+   *   label      button label (default 'photo')
+   *   onChange(newUrlOrNull)  persist the change (called after up/download)
+   * Returns a DOM element that manages its own state.
+   */
+  GT.imageUploader = function (opts) {
+    var url = opts.url || '';
+    var box = h('div.img-uploader');
+    var fileInput = h('input', { type: 'file', accept: 'image/*', style: { display: 'none' },
+      onchange: function () { if (fileInput.files && fileInput.files[0]) handle(fileInput.files[0]); } });
+
+    function handle(file) {
+      render(true);
+      GT.compressImage(file, opts.maxDim || 1280).then(function (blob) {
+        var path = opts.pathPrefix + '/' + Date.now() + '.jpg';
+        return GT.cloud.uploadImage(blob, path);
+      }).then(function (newUrl) {
+        var old = url; url = newUrl;
+        if (old) GT.cloud.deleteImageByUrl(old);
+        opts.onChange(url);
+        GT.toast('Image uploaded', 'success');
+        render(false);
+      }).catch(function (e) {
+        GT.toast(e.message || 'Upload failed', 'error');
+        render(false);
+      });
+    }
+    function remove() {
+      var old = url; url = '';
+      if (old) GT.cloud.deleteImageByUrl(old);
+      opts.onChange('');
+      render(false);
+    }
+    function render(busy) {
+      clear(box);
+      box.appendChild(fileInput);
+      if (url) box.appendChild(h('img.img-thumb', { src: url, onclick: function () { GT.viewImage(url); } }));
+      var pick = h('button.btn.btn-outline.btn-sm', { type: 'button', disabled: busy ? true : null,
+        onclick: function () { fileInput.value = ''; fileInput.click(); } }, busy ? 'Uploading…' : (url ? 'Change ' + (opts.label || 'photo') : 'Upload ' + (opts.label || 'photo')));
+      var row = h('div.wrap', {}, [pick]);
+      if (url && !busy) row.appendChild(h('button.btn.btn-ghost.btn-sm', { type: 'button', onclick: remove }, 'Remove'));
+      box.appendChild(row);
+    }
+    render(false);
+    return box;
+  };
   GT.toast = toast;
   GT.modal = modal;
   GT.confirm = confirm;

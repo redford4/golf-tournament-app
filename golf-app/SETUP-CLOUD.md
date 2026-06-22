@@ -10,6 +10,10 @@ No coding required. Budget: **$0**. Set aside about 20–30 minutes.
 
 > You only do this **once**. After it's set up, players just open the link.
 
+> **Images (photos & maps):** to enable the tournament photo, course layout map
+> and per-hole photos, also run **`supabase-storage.sql`** once in the Supabase
+> SQL Editor. It creates a public `images` bucket and the upload permissions.
+
 ---
 
 ## Before you start

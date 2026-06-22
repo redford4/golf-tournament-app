@@ -176,7 +176,11 @@
           h('div.ttl', {}, 'Par ' + par),
           h('div.hmeta', {}, [
             'SI ' + si,
-            shots ? h('span.badge.badge-amber', { style: { marginLeft: '6px' } }, shots === 2 ? '2 shots' : '1 shot') : null
+            shots ? h('span.badge.badge-amber', { style: { marginLeft: '6px' } }, shots === 2 ? '2 shots' : '1 shot') : null,
+            (round.holeImages && round.holeImages[i])
+              ? h('button.btn.btn-sm.btn-photo', { type: 'button', style: { marginLeft: '8px', minHeight: '28px', padding: '2px 8px' },
+                  onclick: function () { GT.viewImage(round.holeImages[i], 'Hole ' + (i + 1)); } }, '📷 Hole')
+              : null
           ])
         ]),
         resultNode

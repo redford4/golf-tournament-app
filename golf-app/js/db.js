@@ -50,6 +50,7 @@
       estimateNetForSummary: !!data.estimateNetForSummary,
       sessionHours: data.sessionHours || 4,
       theme: data.theme || 'green',
+      photoUrl: data.photoUrl || '',
       members: data.members || {}, // playerId -> { status:'member'|'blocked', joinedAt }
       createdAt: data.createdAt || Date.now(),
       updatedAt: Date.now()
@@ -68,6 +69,8 @@
       strokeIndex: new Array(18).fill(null),
       yardage: new Array(18).fill(null),
       imageDataUrl: null,
+      mapUrl: '',                       // course layout map (Storage URL)
+      holeImages: new Array(18).fill(null), // per-hole photo Storage URLs
       groups: [], // [{ id, players:[playerId], teeTime:'HH:MM' }] in play order
       configured: false
     };

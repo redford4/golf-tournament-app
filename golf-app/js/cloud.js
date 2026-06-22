@@ -121,6 +121,24 @@
     ]);
   }
 
+  // ---- Image storage (Supabase Storage 'images' bucket) ----------------
+  function uploadImage(blob, path, contentType) {
+    if (!enabled()) return Promise.reject(new Error('Image upload needs the cloud.'));
+    return loadSdk().then(function () {
+      return getClient().storage.from('images').upload(path, blob, { contentType: contentType || 'image/jpeg', upsert: true });
+    }).then(function (res) {
+      if (res.error) throw res.error;
+      return getClient().storage.from('images').getPublicUrl(path).data.publicUrl;
+    });
+  }
+  // Best-effort delete of an image given its public URL.
+  function deleteImageByUrl(url) {
+    if (!enabled() || !url) return Promise.resolve();
+    var m = /\/images\/(.+?)(\?.*)?$/.exec(url);
+    if (!m) return Promise.resolve();
+    return getClient().storage.from('images').remove([m[1]]).catch(function () {});
+  }
+
   // ---- Realtime ---------------------------------------------------------
   var channel = null;
   function subscribe(onChange) {
@@ -144,6 +162,8 @@
     upsertPlayer: upsertPlayer,
     upsertScore: upsertScore,
     removeRow: removeRow,
-    wipeAll: wipeAll
+    wipeAll: wipeAll,
+    uploadImage: uploadImage,
+    deleteImageByUrl: deleteImageByUrl
   };
 })(window.GT = window.GT || {});

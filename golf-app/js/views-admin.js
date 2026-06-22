@@ -155,6 +155,10 @@
       h('div.field', {}, [h('label', {}, 'Session timeout (hours)'), f.sessionHours]),
       h('div.field', {}, [h('label', {}, 'Colour theme'), themeRow,
         h('div.hint', {}, 'Tap a colour to preview; Save to apply for everyone in this tournament.')]),
+      h('div.field', {}, [h('label', {}, 'Tournament photo'),
+        GT.imageUploader({ url: t.photoUrl, pathPrefix: 'tournaments/' + t.id, maxDim: 1280, label: 'photo',
+          onChange: function (url) { db.updateTournament({ photoUrl: url }); } }),
+        h('div.hint', {}, 'Shown to players on the tournament home screen. Saved instantly.')]),
       h('button.btn.btn-primary.btn-block', { onclick: save }, 'Save Settings')
     ]));
 
@@ -248,6 +252,7 @@
     meta.numHoles.addEventListener('change', function () {
       n = parseInt(meta.numHoles.value, 10);
       GT.clear(holesWrap).appendChild(holeTable(n));
+      renderHolePhotos();
     });
 
     function readArray(inputs, len) {
@@ -299,8 +304,32 @@
         h('div.field', {}, [h('label', {}, 'Slope Rating'), meta.slopeRating])
       ]),
       h('div.field', {}, [h('label', {}, 'Course details / notes'), meta.details,
-        h('div.hint', {}, 'Shown to players on the round screen. (Course map & per-hole photos coming next.)')])
+        h('div.hint', {}, 'Shown to players on the round screen.')]),
+      h('div.field', {}, [h('label', {}, 'Course layout map'),
+        GT.imageUploader({ url: round.mapUrl, pathPrefix: 'rounds/' + round.id, maxDim: 1600, label: 'map',
+          onChange: function (url) { db.updateRound(round.id, { mapUrl: url }); } }),
+        h('div.hint', {}, 'A photo of the course layout/planner, shown on the round screen. Saved instantly.')])
     ]));
+
+    // Per-hole photos (saved instantly, independent of the Save button).
+    var holeImgs = (round.holeImages || new Array(18).fill(null)).slice();
+    var holePhotoWrap = h('div.card');
+    function renderHolePhotos() {
+      GT.clear(holePhotoWrap);
+      holePhotoWrap.appendChild(h('div.muted', { style: { marginBottom: '8px', fontWeight: '600' } }, 'Hole photos'));
+      holePhotoWrap.appendChild(h('div.hint', { style: { marginBottom: '6px' } }, 'Optional overview photo for each hole — shown to players while they enter that hole’s score.'));
+      var hn = parseInt(meta.numHoles.value, 10) || 18;
+      for (var i = 0; i < hn; i++) {
+        (function (i) {
+          holePhotoWrap.appendChild(h('div.hole-photo-row', {}, [
+            h('div.hp-num', {}, 'Hole ' + (i + 1)),
+            GT.imageUploader({ url: holeImgs[i], pathPrefix: 'rounds/' + round.id + '/holes', maxDim: 1280, label: 'photo',
+              onChange: function (url) { holeImgs[i] = url || null; db.updateRound(round.id, { holeImages: holeImgs.slice() }); } })
+          ]));
+        })(i);
+      }
+    }
+    renderHolePhotos();
     app.appendChild(h('div.card', {}, [
       h('div.spread', { style: { marginBottom: '8px' } }, [
         h('div', { style: { fontWeight: 600 } }, 'Par, Stroke Index & Yardage'),
@@ -320,6 +349,7 @@
       GT.toast('Filled defaults — adjust as needed.', '');
     }
 
+    app.appendChild(holePhotoWrap);
     app.appendChild(h('button.btn.btn-primary.btn-block', { onclick: save }, 'Save Course'));
   });
 

@@ -76,6 +76,10 @@
 
     if (!player && !GT.state.isAdmin()) { GT.router.go('tournaments'); return; }
 
+    if (t.photoUrl) {
+      app.appendChild(h('img.t-banner', { src: t.photoUrl, alt: t.name, onclick: function () { GT.viewImage(t.photoUrl, t.name); } }));
+    }
+
     if (player) {
       app.appendChild(h('div.card', {}, [
         h('div.spread', {}, [
@@ -184,6 +188,13 @@
       app.appendChild(h('div.card', {}, [
         h('div.muted', { style: { marginBottom: '6px', fontWeight: '600' } }, 'Course details'),
         h('div', { style: { whiteSpace: 'pre-wrap' } }, round.details)
+      ]));
+    }
+
+    if (round.mapUrl) {
+      app.appendChild(h('div.card', {}, [
+        h('div.muted', { style: { marginBottom: '8px', fontWeight: '600' } }, 'Course layout'),
+        h('img.img-thumb', { src: round.mapUrl, alt: 'Course map', onclick: function () { GT.viewImage(round.mapUrl, round.courseName + ' — layout'); } })
       ]));
     }
 
