@@ -79,7 +79,7 @@
     if (player) {
       app.appendChild(h('div.card', {}, [
         h('div.spread', {}, [
-          h('div', {}, [h('h3', {}, 'Hi, ' + player.fullName.split(' ')[0] + ' 👋'),
+          h('div', {}, [h('h3', {}, 'Hi, ' + GT.displayName(player).split(' ')[0] + ' 👋'),
             h('div.muted', {}, 'Handicap Index ' + GT.fmtHi(player.handicapIndex) +
               (player.cdhId ? ' · CDH ' + player.cdhId : ''))]),
           h('button.btn.btn-ghost.btn-sm', { onclick: function () { GT.router.go('profile'); } }, 'Edit')
@@ -180,6 +180,13 @@
         'Your Course Handicap for this round: ' + (ch == null ? '—' : ch)) : null
     ]));
 
+    if (round.details && round.details.trim()) {
+      app.appendChild(h('div.card', {}, [
+        h('div.muted', { style: { marginBottom: '6px', fontWeight: '600' } }, 'Course details'),
+        h('div', { style: { whiteSpace: 'pre-wrap' } }, round.details)
+      ]));
+    }
+
     if (round.imageDataUrl) {
       app.appendChild(h('div.card', {}, [h('div.muted', { style: { marginBottom: '8px' } }, 'Original scorecard'),
         h('img.imgthumb', { src: round.imageDataUrl, alt: 'Scorecard image' })]));
@@ -260,13 +267,13 @@
     var me = GT.state.currentPlayer();
     var isMe = me && me.id === player.id;
 
-    app.appendChild(h('h1.page-title', {}, isMe ? 'My Scorecard' : player.fullName));
+    app.appendChild(h('h1.page-title', {}, isMe ? 'My Scorecard' : GT.formalName(player)));
     app.appendChild(h('p.page-sub', {}, 'Round ' + round.index + ' · ' + (round.courseName || '') +
       ' · HI ' + GT.fmtHi(player.handicapIndex)));
 
     var r = util.result(round, player);
     if (!r.hasScore) {
-      app.appendChild(emptyState('⛳', 'No score yet', player.fullName.split(' ')[0] + ' hasn’t entered a score for this round.'));
+      app.appendChild(emptyState('⛳', 'No score yet', GT.displayName(player).split(' ')[0] + ' hasn’t entered a score for this round.'));
     } else {
       app.appendChild(GT.fullScorecard(round, player, { readOnly: true }));
     }
@@ -281,7 +288,7 @@
     var me = GT.state.currentPlayer();
     var isMe = me && me.id === player.id;
 
-    app.appendChild(h('h1.page-title', {}, isMe ? 'My Tournament' : player.fullName));
+    app.appendChild(h('h1.page-title', {}, isMe ? 'My Tournament' : GT.formalName(player)));
     app.appendChild(h('p.page-sub', {}, 'Handicap Index ' + GT.fmtHi(player.handicapIndex) +
       (player.cdhId ? ' · CDH ' + player.cdhId : '')));
 

@@ -49,6 +49,7 @@
       joinCode: data.joinCode || '',
       estimateNetForSummary: !!data.estimateNetForSummary,
       sessionHours: data.sessionHours || 4,
+      theme: data.theme || 'green',
       members: data.members || {}, // playerId -> { status:'member'|'blocked', joinedAt }
       createdAt: data.createdAt || Date.now(),
       updatedAt: Date.now()
@@ -62,6 +63,7 @@
       index: index,
       courseName: '', date: '', teeColour: '', numHoles: 18,
       courseRating: null, slopeRating: null,
+      details: '',
       par: new Array(18).fill(null),
       strokeIndex: new Array(18).fill(null),
       yardage: new Array(18).fill(null),
@@ -313,6 +315,7 @@
     var p = {
       id: data.id || uid('player'),
       fullName: data.fullName,
+      nickname: data.nickname || '',
       handicapIndex: data.handicapIndex,
       cdhId: data.cdhId || '',
       username: data.username || '',

@@ -46,7 +46,7 @@
       var head = [h('th.rowhead', {}, 'Player')];
       rounds.forEach(function (r) { head.push(h('th', {}, 'R' + r.index)); });
       var body = players.map(function (p) {
-        var row = [h('td.rowhead', {}, p.fullName)];
+        var row = [h('td.rowhead', {}, GT.displayName(p))];
         rounds.forEach(function (r) {
           var res = r.configured ? util.result(r, p) : { hasScore: false };
           var cell, cls = '';
@@ -104,6 +104,20 @@
     };
     f.estimate.checked = !!t.estimateNetForSummary;
 
+    // Colour theme picker (live preview).
+    var chosenTheme = t.theme || 'green';
+    var themeRow = h('div.theme-row');
+    function renderThemes() {
+      GT.clear(themeRow);
+      GT.THEMES.forEach(function (th) {
+        themeRow.appendChild(h('button.theme-swatch' + (th.id === chosenTheme ? '.sel' : ''), {
+          type: 'button', title: th.name, style: { background: th.swatch },
+          onclick: function () { chosenTheme = th.id; GT.applyTheme(chosenTheme); renderThemes(); }
+        }, th.id === chosenTheme ? '✓' : ''));
+      });
+    }
+    renderThemes();
+
     function save() {
       var name = f.name.value.trim();
       var nr = parseInt(f.numRounds.value, 10);
@@ -116,7 +130,8 @@
       var clash = db.findTournamentByJoinCode(jc);
       if (clash && clash.id !== t.id) { GT.toast('That join code is used by another tournament.', 'error'); return; }
       db.updateTournament({ name: name, numRounds: nr, joinCode: jc, adminCode: ac,
-        estimateNetForSummary: f.estimate.checked, sessionHours: parseInt(f.sessionHours.value, 10) || 4 });
+        estimateNetForSummary: f.estimate.checked, sessionHours: parseInt(f.sessionHours.value, 10) || 4,
+        theme: chosenTheme });
       db.logAdmin('Updated tournament settings');
       GT.toast('Settings saved', 'success');
       GT.router.go('admin');
@@ -138,6 +153,8 @@
         h('div.hint', {}, 'If off, Net shows N/A for summary-entry rounds.')
       ]),
       h('div.field', {}, [h('label', {}, 'Session timeout (hours)'), f.sessionHours]),
+      h('div.field', {}, [h('label', {}, 'Colour theme'), themeRow,
+        h('div.hint', {}, 'Tap a colour to preview; Save to apply for everyone in this tournament.')]),
       h('button.btn.btn-primary.btn-block', { onclick: save }, 'Save Settings')
     ]));
 
@@ -206,7 +223,8 @@
       teeColour: h('input', { type: 'text', value: round.teeColour, placeholder: 'e.g. Yellow' }),
       numHoles: h('select', {}, [h('option', { value: '18' }, '18 holes'), h('option', { value: '9' }, '9 holes')]),
       courseRating: h('input', { type: 'number', step: '0.1', value: round.courseRating != null ? round.courseRating : '', placeholder: 'e.g. 72.1' }),
-      slopeRating: h('input', { type: 'number', value: round.slopeRating != null ? round.slopeRating : '', placeholder: 'e.g. 131' })
+      slopeRating: h('input', { type: 'number', value: round.slopeRating != null ? round.slopeRating : '', placeholder: 'e.g. 131' }),
+      details: h('textarea', { rows: '3', placeholder: 'Notes about the course — directions, dress code, local rules, things to know…' }, round.details || '')
     };
     meta.numHoles.value = String(n);
 
@@ -260,7 +278,8 @@
 
       db.updateRound(round.id, {
         courseName: name, date: meta.date.value, teeColour: meta.teeColour.value.trim(),
-        numHoles: holesN, courseRating: cr, slopeRating: sl, par: par, strokeIndex: si, yardage: yd,
+        numHoles: holesN, courseRating: cr, slopeRating: sl, details: meta.details.value.trim(),
+        par: par, strokeIndex: si, yardage: yd,
         configured: true
       });
       db.logAdmin('Configured Round ' + round.index + ' (' + name + ')');
@@ -278,7 +297,9 @@
         h('div.field', {}, [h('label', {}, 'Holes'), meta.numHoles]),
         h('div.field', {}, [h('label', {}, 'Course Rating'), meta.courseRating]),
         h('div.field', {}, [h('label', {}, 'Slope Rating'), meta.slopeRating])
-      ])
+      ]),
+      h('div.field', {}, [h('label', {}, 'Course details / notes'), meta.details,
+        h('div.hint', {}, 'Shown to players on the round screen. (Course map & per-hole photos coming next.)')])
     ]));
     app.appendChild(h('div.card', {}, [
       h('div.spread', { style: { marginBottom: '8px' } }, [
@@ -320,7 +341,7 @@
       var p = m.player;
       var blocked = m.status === 'blocked';
       list.appendChild(h('div.card.card-row', {}, [
-        h('div.grow', {}, [h('h3', {}, p.fullName),
+        h('div.grow', {}, [h('h3', {}, GT.formalName(p)),
           h('div.muted', {}, 'HI ' + GT.fmtHi(p.handicapIndex) + (p.username ? ' · @' + p.username : '')),
           blocked ? h('span.badge.badge-red', { style: { marginTop: '4px' } }, 'Blocked') : null]),
         h('div.wrap', {}, [
@@ -370,7 +391,7 @@
       var holder = h('div.stack');
       nonMembers.sort(function (a, b) { return a.fullName.localeCompare(b.fullName); }).forEach(function (p) {
         holder.appendChild(h('div.card.tap.card-row', { onclick: function () { db.addMember(t.id, p.id); db.logAdmin('Added ' + p.fullName); close(); GT.toast('Added ' + p.fullName, 'success'); GT.router.render(); } }, [
-          h('div.grow', {}, [h('h3', {}, p.fullName), h('div.muted', {}, 'HI ' + GT.fmtHi(p.handicapIndex) + (p.username ? ' · @' + p.username : ''))]),
+          h('div.grow', {}, [h('h3', {}, GT.formalName(p)), h('div.muted', {}, 'HI ' + GT.fmtHi(p.handicapIndex) + (p.username ? ' · @' + p.username : ''))]),
           h('span', {}, '+')
         ]));
       });
@@ -405,7 +426,7 @@
     players.forEach(function (p) {
       var res = util.result(round, p);
       list.appendChild(h('div.card.card-row', {}, [
-        h('div.grow', {}, [h('h3', {}, p.fullName),
+        h('div.grow', {}, [h('h3', {}, GT.formalName(p)),
           h('div.muted', {}, res.hasScore
             ? ('Mode ' + res.mode + ' · ' + (res.points != null ? res.points + ' pts' : '—') + (res.complete ? '' : ' · incomplete'))
             : 'No score yet')]),
@@ -437,7 +458,7 @@
     var rec = db.getScore(round.id, player.id) || db.blankScore(round.id, player.id, 'A');
     var ch = util.courseHcp(round, player) || 0;
 
-    app.appendChild(h('h1.page-title', {}, 'Edit: ' + player.fullName));
+    app.appendChild(h('h1.page-title', {}, 'Edit: ' + GT.formalName(player)));
     app.appendChild(h('p.page-sub', {}, 'Round ' + round.index + ' · ' + round.courseName + ' · Course Hcp ' + ch));
 
     // Mode + lock controls
@@ -532,13 +553,13 @@
 
   function exportCsv() {
     var rounds = db.getRounds(), players = db.getPlayers();
-    var rows = [['Round', 'Course', 'Player', 'Handicap Index', 'Course Handicap', 'Mode', 'Gross', 'Net', 'Stableford', 'Holes Played', 'Complete', 'Locked']];
+    var rows = [['Round', 'Course', 'Player', 'Nickname', 'Handicap Index', 'Course Handicap', 'Mode', 'Gross', 'Net', 'Stableford', 'Holes Played', 'Complete', 'Locked']];
     rounds.forEach(function (r) {
       if (!r.configured) return;
       players.forEach(function (p) {
         var res = util.result(r, p);
         if (!res.hasScore) return;
-        rows.push([r.index, r.courseName, p.fullName, GT.fmtHi(p.handicapIndex), res.courseHcp,
+        rows.push([r.index, r.courseName, p.fullName, p.nickname || '', GT.fmtHi(p.handicapIndex), res.courseHcp,
           res.mode, res.gross != null ? res.gross : '', res.net != null ? res.net : '',
           res.points != null ? res.points : '', res.played, res.complete ? 'Y' : 'N', res.locked ? 'Y' : 'N']);
       });

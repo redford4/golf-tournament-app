@@ -90,7 +90,7 @@
     var rows = db.getPlayers().map(function (p) {
       var res = util.result(round, p);
       return {
-        id: p.id, name: p.fullName, you: me && me.id === p.id,
+        id: p.id, name: GT.displayName(p), you: me && me.id === p.id,
         hi: p.handicapIndex, ch: res.courseHcp,
         gross: res.hasScore ? res.gross : null,
         net: res.net,
@@ -151,7 +151,7 @@
         if (res.mode === 'B') anyB = true;
       });
       return {
-        id: p.id, name: p.fullName, you: me && me.id === p.id, hi: p.handicapIndex,
+        id: p.id, name: GT.displayName(p), you: me && me.id === p.id, hi: p.handicapIndex,
         gross: anyScore ? gross : null, net: anyNet ? net : null, points: anyScore ? points : null,
         rounds: played, incomplete: anyScore && (played < rounds.length || !allComplete),
         modeB: anyB, hasScore: anyScore

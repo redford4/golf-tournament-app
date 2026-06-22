@@ -46,7 +46,7 @@
 
     drawer.appendChild(h('div.drawer-header', {}, [
       h('div.t-name', {}, (t && t.name) || 'Golf Tournaments'),
-      h('div.t-sub', {}, role === 'admin' ? 'Organiser' : role === 'viewer' ? 'Viewer (read-only)' : (player ? player.fullName : 'Player'))
+      h('div.t-sub', {}, role === 'admin' ? 'Organiser' : role === 'viewer' ? 'Viewer (read-only)' : (player ? GT.displayName(player) : 'Player'))
     ]));
 
     if (role === 'viewer') {
@@ -82,6 +82,9 @@
   function update(route) {
     var appbar = document.getElementById('appbar');
     var loggedIn = !!GT.state.get().role;
+    // Apply the active tournament's colour theme (default green when none).
+    var at = GT.db.getActiveTournament();
+    GT.applyTheme(at && at.theme);
     var noChrome = !loggedIn || route.name === 'login' || route.name === 'register' || route.name === 'createtournament';
 
     if (noChrome) {

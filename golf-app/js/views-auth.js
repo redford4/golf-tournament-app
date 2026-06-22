@@ -54,7 +54,7 @@
         var p = db.findPlayerByUsername(u);
         if (!p || !GT.verifyPassword(pword.value, p.passwordHash)) { GT.toast('Incorrect username or password.', 'error'); pword.value = ''; pword.focus(); return; }
         GT.state.setRole('player'); GT.state.setPlayer(p.id);
-        GT.toast('Welcome back, ' + p.fullName.split(' ')[0] + '!', 'success');
+        GT.toast('Welcome back, ' + GT.displayName(p).split(' ')[0] + '!', 'success');
         GT.router.go('tournaments');
       }
       panel.appendChild(h('div.card.stack', {}, [
@@ -178,7 +178,8 @@
       else { GT.toast('No tournament found with that join code.', 'error'); }
     }
     app.appendChild(h('div.card.stack', { style: { marginTop: '10px' } }, [
-      h('div.field', {}, [h('label', {}, 'Join a tournament'), code, h('div.hint', {}, 'Ask the organiser for the join code.')]),
+      h('div.field', {}, [h('label', {}, 'Join a new tournament'), code,
+        h('div.hint', {}, 'Enter the organiser’s join code. You only need it once — after joining, the tournament stays in your list and you go straight in.')]),
       h('button.btn.btn-primary.btn-block', { onclick: join }, 'Join')
     ]));
 
@@ -191,6 +192,7 @@
     var existing = opts.player || null;
     var f = {
       fullName: h('input', { type: 'text', value: existing ? existing.fullName : '', placeholder: 'e.g. Rory McIlroy' }),
+      nickname: h('input', { type: 'text', value: existing ? (existing.nickname || '') : '', placeholder: 'e.g. Rors (optional)' }),
       handicapIndex: h('input', { type: 'number', step: '0.1', inputmode: 'decimal',
         value: existing && existing.handicapIndex != null ? existing.handicapIndex : '', placeholder: 'e.g. 12.4' }),
       cdhId: h('input', { type: 'text', value: existing ? existing.cdhId : '', placeholder: 'Handicap certificate ID' }),
@@ -200,6 +202,7 @@
 
     function submit() {
       var name = f.fullName.value.trim();
+      var nickname = f.nickname.value.trim();
       var hi = f.handicapIndex.value === '' ? null : parseFloat(f.handicapIndex.value);
       var cdh = f.cdhId.value.trim();
       var username = f.username.value.trim();
@@ -215,13 +218,13 @@
       function finish() {
         var p;
         if (existing) {
-          var patch = { fullName: name, handicapIndex: hi, cdhId: cdh, username: username };
+          var patch = { fullName: name, nickname: nickname, handicapIndex: hi, cdhId: cdh, username: username };
           if (pw) patch.passwordHash = GT.hashPassword(pw);
           p = db.updatePlayer(existing.id, patch);
           if (opts.isAdmin) db.logAdmin('Edited player profile: ' + name + (pw ? ' (password reset)' : ''));
           GT.toast('Profile updated', 'success');
         } else {
-          p = db.addPlayer({ fullName: name, handicapIndex: hi, cdhId: cdh, username: username, passwordHash: GT.hashPassword(pw) });
+          p = db.addPlayer({ fullName: name, nickname: nickname, handicapIndex: hi, cdhId: cdh, username: username, passwordHash: GT.hashPassword(pw) });
           GT.toast('Welcome, ' + name + '!', 'success');
         }
         if (opts.onSaved) opts.onSaved(p);
@@ -232,7 +235,8 @@
     }
 
     app.appendChild(h('div.card.stack', {}, [
-      h('div.field', {}, [h('label', {}, 'Full Name'), f.fullName, h('div.hint', {}, 'Shown on scorecards and leaderboards.')]),
+      h('div.field', {}, [h('label', {}, 'Full Name'), f.fullName, h('div.hint', {}, 'Your real name, shown to the organiser.')]),
+      h('div.field', {}, [h('label', {}, 'Nickname'), f.nickname, h('div.hint', {}, 'What you’ll be called on leaderboards and scorecards (optional).')]),
       h('div.field', {}, [h('label', {}, 'Handicap Index (WHS)'), f.handicapIndex, h('div.hint', {}, 'Your official portable handicap, e.g. 12.4.')]),
       h('div.field', {}, [h('label', {}, 'CDH ID'), f.cdhId, h('div.hint', {}, 'From your handicap certificate (optional).')]),
       h('hr.divider'),
@@ -270,5 +274,16 @@
   GT.fmtHi = function (hi) {
     if (hi == null || isNaN(hi)) return '—';
     return (Math.round(hi * 10) / 10).toFixed(1);
+  };
+
+  // Name shown on compact lists (leaderboards, scorecards): nickname if set.
+  GT.displayName = function (p) {
+    if (!p) return '';
+    return (p.nickname && p.nickname.trim()) ? p.nickname : p.fullName;
+  };
+  // Fuller name for profile / member management: Full Name "Nick".
+  GT.formalName = function (p) {
+    if (!p) return '';
+    return (p.nickname && p.nickname.trim()) ? (p.fullName + ' “' + p.nickname + '”') : p.fullName;
   };
 })(window.GT = window.GT || {});

@@ -19,8 +19,31 @@
   --maxw: 760px;
 }
 
+/* ---- Colour themes (organiser-selectable) ---- */
+/* "green" is the default in :root above. Each theme re-tints the accent set. */
+[data-theme="ocean"] {
+  --green: #1565a8; --green-dark: #0e4a7d; --green-light: #e4eff8; --fairway: #1b7bc4; --blue: #0e4a7d;
+  --shadow: 0 1px 3px rgba(16,28,38,.08), 0 6px 16px rgba(16,28,38,.06);
+}
+[data-theme="sunset"] {
+  --green: #c4561d; --green-dark: #9c3f12; --green-light: #fdeee3; --fairway: #e0701f; --blue: #b5491a;
+}
+[data-theme="berry"] {
+  --green: #8e2d6b; --green-dark: #6f2153; --green-light: #f8e6f1; --fairway: #ad3a83; --blue: #6f2153;
+}
+[data-theme="slate"] {
+  --green: #37474f; --green-dark: #263238; --green-light: #eceff1; --fairway: #455a64; --blue: #37474f;
+}
+[data-theme="claret"] {
+  --green: #7b1e2b; --green-dark: #5d1620; --green-light: #f7e6e8; --fairway: #9a2c3a; --blue: #5d1620;
+}
+
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
+.theme-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.theme-swatch { width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--line);
+  color: #fff; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.theme-swatch.sel { border-color: var(--ink); box-shadow: 0 0 0 2px #fff inset; }
 html, body { margin: 0; padding: 0; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;

@@ -239,6 +239,23 @@
   GT.formatDate = formatDate;
   GT.hashPassword = hashPassword;
   GT.verifyPassword = verifyPassword;
+  GT.THEMES = [
+    { id: 'green', name: 'Fairway Green', swatch: '#0b6e4f' },
+    { id: 'ocean', name: 'Ocean Blue', swatch: '#1565a8' },
+    { id: 'sunset', name: 'Sunset Orange', swatch: '#c4561d' },
+    { id: 'berry', name: 'Berry', swatch: '#8e2d6b' },
+    { id: 'slate', name: 'Slate', swatch: '#37474f' },
+    { id: 'claret', name: 'Claret', swatch: '#7b1e2b' }
+  ];
+  GT.applyTheme = function (theme) {
+    var id = (theme && GT.THEMES.some(function (t) { return t.id === theme; })) ? theme : 'green';
+    var root = document.documentElement;
+    if (id === 'green') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', id);
+    var meta = document.querySelector('meta[name="theme-color"]');
+    var sw = GT.THEMES.filter(function (t) { return t.id === id; })[0];
+    if (meta && sw) meta.setAttribute('content', sw.swatch);
+  };
   GT.toast = toast;
   GT.modal = modal;
   GT.confirm = confirm;
