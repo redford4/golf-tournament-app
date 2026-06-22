@@ -89,8 +89,19 @@
     return fetchAll().then(function (out) { GT.db._hydrate(out.cache); return true; });
   }
 
+  // Track ids we just wrote so we can ignore the realtime echo of our own
+  // changes (which would otherwise re-render the screen mid-interaction).
+  var recentWrites = {};
+  function markWrite(id) { if (id) recentWrites[id] = Date.now(); }
+  function isRecentWrite(id) {
+    if (!id || !recentWrites[id]) return false;
+    if (Date.now() - recentWrites[id] > 8000) { delete recentWrites[id]; return false; }
+    return true;
+  }
+
   // ---- Per-entity writes (fire-and-forget, with error toast) ------------
   function ok(table, row) {
+    markWrite(row.id);
     return getClient().from(table).upsert(row).then(function (r) {
       if (r.error) { console.error('[cloud] ' + table + ' write failed', r.error); GT.toast('Cloud save failed — will retry on next change.', 'error'); }
     }, function (e) { console.error('[cloud]', e); });
@@ -104,6 +115,7 @@
   }
   function removeRow(table, id) {
     if (!enabled()) return Promise.resolve();
+    markWrite(id);
     return getClient().from(table).delete().eq('id', id).then(function (r) {
       if (r.error) console.error('[cloud] delete failed', r.error);
     });
@@ -144,12 +156,16 @@
   function subscribe(onChange) {
     if (!enabled()) return;
     var c = getClient();
-    channel = c.channel('golf-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tournaments' }, onChange)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, onChange)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, onChange)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'scores' }, onChange)
-      .subscribe();
+    var tables = ['tournaments', 'rounds', 'players', 'scores'];
+    channel = c.channel('golf-sync');
+    tables.forEach(function (tbl) {
+      channel = channel.on('postgres_changes', { event: '*', schema: 'public', table: tbl }, function (payload) {
+        var id = (payload && payload.new && payload.new.id) || (payload && payload.old && payload.old.id);
+        if (isRecentWrite(id)) return; // our own change — already applied locally
+        onChange(payload);
+      });
+    });
+    channel.subscribe();
   }
 
   GT.cloud = {
@@ -164,6 +180,7 @@
     removeRow: removeRow,
     wipeAll: wipeAll,
     uploadImage: uploadImage,
-    deleteImageByUrl: deleteImageByUrl
+    deleteImageByUrl: deleteImageByUrl,
+    isRecentWrite: isRecentWrite
   };
 })(window.GT = window.GT || {});

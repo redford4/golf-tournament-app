@@ -206,6 +206,7 @@
     else location.hash = hash;
   }
 
+  var lastRenderHash = null;
   function render() {
     var route = parseHash();
     loadSession();
@@ -220,14 +221,21 @@
     }
     var fn = routes[route.name] || routes['notfound'];
     var app = document.getElementById('view');
+    var navigated = location.hash !== lastRenderHash;
+    lastRenderHash = location.hash;
+    var prevScroll = window.scrollY;
     clear(app);
-    window.scrollTo(0, 0);
+    // Only jump to top on real navigation; a re-render of the same screen
+    // (e.g. a live cloud update) should keep the user's scroll position.
+    if (navigated) window.scrollTo(0, 0);
     try {
       fn(app, route.params, route.query);
     } catch (e) {
       console.error('Render error', e);
       app.appendChild(h('div.card', {}, 'Something went wrong rendering this screen. ' + e.message));
     }
+    // Restore scroll on a same-screen re-render so live updates don't jump.
+    if (!navigated) window.scrollTo(0, prevScroll);
     GT.chrome && GT.chrome.update(route);
   }
 

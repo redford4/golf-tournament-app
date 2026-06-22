@@ -34,8 +34,8 @@
     ]));
 
     app.appendChild(h('div.note.note-green', {}, [
-      'Players join “' + t.name + '” with the code ',
-      h('b', {}, t.joinCode || '(set one in Setup)'), '. Share it with your group.'
+      'Players join “' + t.name + '” by picking it from their tournament list after they sign in — no code needed. You can block or remove anyone from ',
+      h('b', {}, 'Members'), '.'
     ]));
 
     // Completion matrix
@@ -97,7 +97,6 @@
     var f = {
       name: h('input', { type: 'text', value: t.name, placeholder: 'e.g. Marbella Golf Week 2026' }),
       numRounds: h('input', { type: 'number', min: '1', value: t.numRounds }),
-      joinCode: h('input', { type: 'text', value: t.joinCode, autocapitalize: 'off', spellcheck: 'false' }),
       adminCode: h('input', { type: 'text', value: t.adminCode, autocapitalize: 'off', spellcheck: 'false' }),
       estimate: h('input', { type: 'checkbox' }),
       sessionHours: h('input', { type: 'number', min: '1', value: t.sessionHours })
@@ -121,15 +120,11 @@
     function save() {
       var name = f.name.value.trim();
       var nr = parseInt(f.numRounds.value, 10);
-      var jc = f.joinCode.value.trim();
       var ac = f.adminCode.value.trim();
       if (!name) { GT.toast('Tournament name is required.', 'error'); return; }
       if (!nr || nr < 1) { GT.toast('Number of rounds must be at least 1.', 'error'); return; }
-      if (!jc || !ac) { GT.toast('Both a join code and an admin code are required.', 'error'); return; }
-      if (jc.toLowerCase() === ac.toLowerCase()) { GT.toast('Admin code must be different from the join code.', 'error'); return; }
-      var clash = db.findTournamentByJoinCode(jc);
-      if (clash && clash.id !== t.id) { GT.toast('That join code is used by another tournament.', 'error'); return; }
-      db.updateTournament({ name: name, numRounds: nr, joinCode: jc, adminCode: ac,
+      if (!ac) { GT.toast('An admin code is required.', 'error'); return; }
+      db.updateTournament({ name: name, numRounds: nr, adminCode: ac,
         estimateNetForSummary: f.estimate.checked, sessionHours: parseInt(f.sessionHours.value, 10) || 4,
         theme: chosenTheme });
       db.logAdmin('Updated tournament settings');
@@ -141,12 +136,8 @@
       h('div.field', {}, [h('label', {}, 'Tournament Name'), f.name]),
       h('div.field', {}, [h('label', {}, 'Number of Rounds'), f.numRounds,
         h('div.hint', {}, 'Adding rounds creates new empty round slots.')]),
-      h('div.grid2', {}, [
-        h('div.field', {}, [h('label', {}, 'Join Code (players)'), f.joinCode,
-          h('div.hint', {}, 'Players enter this to join.')]),
-        h('div.field', {}, [h('label', {}, 'Admin Code (you)'), f.adminCode,
-          h('div.hint', {}, 'Used to manage this tournament.')])
-      ]),
+      h('div.field', {}, [h('label', {}, 'Admin Code (you)'), f.adminCode,
+        h('div.hint', {}, 'Used to manage this tournament. Players don’t need a code — they join from their list.')]),
       h('div.field', {}, [
         h('label', { style: { display: 'flex', alignItems: 'center', gap: '10px' } }, [f.estimate,
           h('span', {}, 'Estimate Net for summary scores (gross − course handicap)')]),
@@ -358,12 +349,11 @@
     if (!requireAdmin(app)) return;
     var t = db.getTournament();
     app.appendChild(h('h1.page-title', {}, 'Member Management'));
-    app.appendChild(h('div.note.note-green', {}, ['Players join with code ', h('b', {}, t.joinCode || '(set in Setup)'),
-      '. You can grant, remove or block access below.']));
+    app.appendChild(h('div.note.note-green', {}, ['Players join this tournament from their own list after signing in — no code needed. You can remove or block anyone here, or add an existing account below.']));
 
     var members = db.getMembers(t.id).sort(function (a, b) { return a.player.fullName.localeCompare(b.player.fullName); });
     if (!members.length) {
-      app.appendChild(GT.emptyState('👥', 'No members yet', 'Share the join code, or add players below.'));
+      app.appendChild(GT.emptyState('👥', 'No members yet', 'Players can join from their list, or add an existing account below.'));
     }
 
     var list = h('div.stack');

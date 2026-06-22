@@ -115,24 +115,20 @@
   // ---- Create a tournament (organiser) ---------------------------------
   GT.router.register('createtournament', function (app) {
     app.appendChild(h('h1.page-title', {}, 'Create a Tournament'));
-    app.appendChild(h('p.page-sub', {}, 'You’ll be its organiser. Share the join code with players; keep the admin code to yourself.'));
+    app.appendChild(h('p.page-sub', {}, 'You’ll be its organiser. Players can find and join it from their tournament list; keep the admin code to yourself.'));
     var f = {
       name: h('input', { type: 'text', placeholder: 'e.g. Marbella Golf Week 2026' }),
       numRounds: h('input', { type: 'number', min: '1', value: '4' }),
-      joinCode: h('input', { type: 'text', placeholder: 'e.g. MARBELLA26', autocapitalize: 'off', spellcheck: 'false' }),
       adminCode: h('input', { type: 'text', placeholder: 'a secret only you know', autocapitalize: 'off', spellcheck: 'false' })
     };
     function create() {
       var name = f.name.value.trim();
       var nr = parseInt(f.numRounds.value, 10);
-      var jc = f.joinCode.value.trim();
       var ac = f.adminCode.value.trim();
       if (!name) { GT.toast('Tournament name is required.', 'error'); return; }
       if (!nr || nr < 1) { GT.toast('Number of rounds must be at least 1.', 'error'); return; }
-      if (!jc || !ac) { GT.toast('Both a join code and an admin code are required.', 'error'); return; }
-      if (jc.toLowerCase() === ac.toLowerCase()) { GT.toast('Join code and admin code must be different.', 'error'); return; }
-      if (db.findTournamentByJoinCode(jc)) { GT.toast('That join code is already in use — pick another.', 'error'); return; }
-      var t = db.createTournament({ name: name, numRounds: nr, joinCode: jc, adminCode: ac });
+      if (!ac) { GT.toast('An admin code is required.', 'error'); return; }
+      var t = db.createTournament({ name: name, numRounds: nr, adminCode: ac });
       GT.state.setRole('admin'); GT.state.setTournament(t.id);
       GT.toast('Tournament created', 'success');
       GT.router.go('admin');
@@ -140,8 +136,7 @@
     app.appendChild(h('div.card.stack', {}, [
       h('div.field', {}, [h('label', {}, 'Tournament Name'), f.name]),
       h('div.field', {}, [h('label', {}, 'Number of Rounds'), f.numRounds]),
-      h('div.field', {}, [h('label', {}, 'Join Code (for players)'), f.joinCode, h('div.hint', {}, 'Players enter this to join.')]),
-      h('div.field', {}, [h('label', {}, 'Admin Code (for you)'), f.adminCode, h('div.hint', {}, 'Used to manage this tournament.')]),
+      h('div.field', {}, [h('label', {}, 'Admin Code (for you)'), f.adminCode, h('div.hint', {}, 'Used to manage this tournament. Players don’t need a code — they join from their list.')]),
       h('button.btn.btn-primary.btn-block', { onclick: create }, 'Create Tournament')
     ]));
     app.appendChild(h('button.btn.btn-ghost.btn-block', { onclick: function () { GT.router.go('login'); } }, '« Back'));
@@ -153,7 +148,10 @@
     if (!player) { GT.router.go('login'); return; }
     app.appendChild(h('h1.page-title', {}, 'Your Tournaments'));
 
+    var all = db.getTournaments();
     var mine = db.getPlayerTournaments(player.id);
+    var mineIds = {}; mine.forEach(function (t) { mineIds[t.id] = 1; });
+
     if (mine.length) {
       var list = h('div.stack');
       mine.forEach(function (t) {
@@ -164,26 +162,30 @@
       });
       app.appendChild(list);
     } else {
-      app.appendChild(GT.emptyState('⛳', 'You haven’t joined any tournaments', 'Enter a join code below to get started.'));
+      app.appendChild(GT.emptyState('⛳', 'You haven’t joined any tournaments yet', 'Pick one below to join.'));
     }
 
-    var code = h('input', { type: 'text', placeholder: 'Join code', autocapitalize: 'off', spellcheck: 'false',
-      onkeydown: function (e) { if (e.key === 'Enter') join(); } });
-    function join() {
-      var v = code.value.trim();
-      if (!v) { GT.toast('Enter a join code.', 'error'); return; }
-      var res = db.joinTournamentByCode(v, player.id);
-      if (res.ok) { GT.toast('Joined ' + res.tournament.name, 'success'); GT.state.setTournament(res.tournament.id); GT.router.go('home'); }
-      else if (res.reason === 'blocked') { GT.toast('Your access to that tournament has been blocked.', 'error'); }
-      else { GT.toast('No tournament found with that join code.', 'error'); }
+    var others = all.filter(function (t) { return !mineIds[t.id]; });
+    if (others.length) {
+      app.appendChild(h('h2.section-title', {}, 'Join a tournament'));
+      var jl = h('div.stack');
+      others.forEach(function (t) {
+        var blocked = db.isBlocked(t.id, player.id);
+        jl.appendChild(h('div.card' + (blocked ? '' : '.tap') + '.card-row', {
+          onclick: blocked ? null : function () {
+            db.addMember(t.id, player.id);
+            GT.toast('Joined ' + t.name, 'success');
+            GT.state.setTournament(t.id); GT.router.go('home');
+          }
+        }, [
+          h('div.grow', {}, [h('h3', {}, t.name), h('div.muted', {}, t.numRounds + ' rounds')]),
+          blocked ? h('span.badge.badge-red', {}, 'Blocked') : h('span.badge.badge-green', {}, 'Join')
+        ]));
+      });
+      app.appendChild(jl);
     }
-    app.appendChild(h('div.card.stack', { style: { marginTop: '10px' } }, [
-      h('div.field', {}, [h('label', {}, 'Join a new tournament'), code,
-        h('div.hint', {}, 'Enter the organiser’s join code. You only need it once — after joining, the tournament stays in your list and you go straight in.')]),
-      h('button.btn.btn-primary.btn-block', { onclick: join }, 'Join')
-    ]));
 
-    app.appendChild(h('button.btn.btn-ghost.btn-block', { onclick: function () { GT.state.logout(); } }, 'Sign out'));
+    app.appendChild(h('button.btn.btn-ghost.btn-block', { style: { marginTop: '12px' }, onclick: function () { GT.state.logout(); } }, 'Sign out'));
   });
 
   // ---- Registration form (shared by register + edit profile + admin) ----
