@@ -156,6 +156,90 @@
     return { ok: true, message: '' };
   }
 
+  // ---- Group generation (tee groups) -----------------------------------
+  /**
+   * Decide group sizes for N players given a preferred size S (2,3,4).
+   * Returns sizes in play order (smallest first, per PRD), avoiding lone
+   * 1-balls by re-balancing.
+   */
+  function groupSizes(N, S) {
+    if (N <= 0) return [];
+    if (N <= S) return [N];
+    var full = Math.floor(N / S), rem = N % S, sizes = [], i;
+    for (i = 0; i < full; i++) sizes.push(S);
+    if (rem > 0) sizes.push(rem);
+    // Avoid a lone single: merge it with a full group and re-split sensibly.
+    if (rem === 1 && sizes.length > 1) {
+      sizes.pop();                 // drop the 1
+      var last = sizes.pop();      // a full S group
+      var total = last + 1;        // S + 1
+      if (total <= 3) sizes.push(total);                 // 2+1 -> a 3-ball
+      else { var a = Math.ceil(total / 2); sizes.push(a, total - a); } // 4+1 -> 3,2
+    }
+    sizes.sort(function (x, y) { return x - y; }); // smallest (plays first) first
+    return sizes;
+  }
+
+  function pairKey(a, b) { return a < b ? a + '|' + b : b + '|' + a; }
+
+  /** Total "repeat pairing" cost of an arrangement, from prior pair counts. */
+  function repeatCost(groups, pairCounts) {
+    var cost = 0;
+    groups.forEach(function (g) {
+      for (var i = 0; i < g.length; i++)
+        for (var j = i + 1; j < g.length; j++)
+          cost += (pairCounts[pairKey(g[i], g[j])] || 0);
+    });
+    return cost;
+  }
+
+  function shuffle(arr, rnd) {
+    var a = arr.slice();
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor((rnd ? rnd() : Math.random()) * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  function sliceBy(ids, sizes) {
+    var groups = [], k = 0;
+    sizes.forEach(function (s) { groups.push(ids.slice(k, k + s)); k += s; });
+    return groups;
+  }
+
+  /**
+   * Build tee groups.
+   * @param {string[]} ids        player ids in the field
+   * @param {number}   size       preferred group size (2|3|4)
+   * @param {object}   opts
+   *        mode: 'random' (default) | 'ranking'
+   *        rankingWorstFirst: ids ordered worst→best (for 'ranking' mode)
+   *        pairCounts: { 'a|b': n } prior groupings (for 'random' avoidance)
+   *        attempts: random tries (default 400)
+   * @returns {string[][]} groups in play order (smallest/worst first)
+   */
+  function makeGroups(ids, size, opts) {
+    opts = opts || {};
+    var sizes = groupSizes(ids.length, size);
+    if (opts.mode === 'ranking') {
+      var ordered = (opts.rankingWorstFirst || ids).filter(function (id) { return ids.indexOf(id) > -1; });
+      // include any ids missing from the ranking at the end
+      ids.forEach(function (id) { if (ordered.indexOf(id) < 0) ordered.push(id); });
+      return sliceBy(ordered, sizes);
+    }
+    // random, minimising repeat pairings via best-of-N
+    var pc = opts.pairCounts || {};
+    var attempts = opts.attempts || 400;
+    var best = null, bestCost = Infinity;
+    for (var n = 0; n < attempts; n++) {
+      var cand = sliceBy(shuffle(ids), sizes);
+      var c = repeatCost(cand, pc);
+      if (c < bestCost) { bestCost = c; best = cand; if (c === 0) break; }
+    }
+    return best || sliceBy(ids, sizes);
+  }
+
   GT.golf = {
     courseHandicap: courseHandicap,
     shotsReceived: shotsReceived,
@@ -165,6 +249,9 @@
     parTotal: parTotal,
     computeRound: computeRound,
     validateStrokeIndex: validateStrokeIndex,
-    validatePar: validatePar
+    validatePar: validatePar,
+    groupSizes: groupSizes,
+    makeGroups: makeGroups,
+    pairKey: pairKey
   };
 })(window.GT = window.GT || {});

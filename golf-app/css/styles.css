@@ -44,6 +44,16 @@
 .theme-swatch { width: 44px; height: 44px; border-radius: 50%; border: 2px solid var(--line);
   color: #fff; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .theme-swatch.sel { border-color: var(--ink); box-shadow: 0 0 0 2px #fff inset; }
+.seg-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.seg { flex: 1; min-width: 90px; border: 1px solid var(--line); background: #fff; color: var(--ink);
+  padding: 9px 10px; border-radius: 10px; font: inherit; font-weight: 600; cursor: pointer; }
+.seg.active { background: var(--green); border-color: var(--green); color: #fff; }
+.grp-player { display: flex; align-items: center; gap: 10px; }
+.grp-player .grow { flex: 1; min-width: 0; }
+.grp-player select { width: auto; min-height: 38px; padding: 6px 8px; }
+.tee-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
+.tee-row .tee-time { font-weight: 800; color: var(--green-dark); min-width: 56px; }
+.tee-row.mine { background: var(--green-light); border-radius: 8px; padding: 8px; border-top: 0; }
 html, body { margin: 0; padding: 0; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;

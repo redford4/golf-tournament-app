@@ -187,6 +187,9 @@
       ]));
     }
 
+    var tee = teeTimesCard(round, player);
+    if (tee) app.appendChild(tee);
+
     if (round.imageDataUrl) {
       app.appendChild(h('div.card', {}, [h('div.muted', { style: { marginBottom: '8px' } }, 'Original scorecard'),
         h('img.imgthumb', { src: round.imageDataUrl, alt: 'Scorecard image' })]));
@@ -212,6 +215,27 @@
       app.appendChild(actions);
     }
   });
+
+  // Tee times / groups for a round (shown to players and viewers).
+  function teeTimesCard(round, player) {
+    var groups = db.getGroups(round.id);
+    if (!groups.length) return null;
+    var card = h('div.card', {}, [h('div.muted', { style: { marginBottom: '8px', fontWeight: '600' } }, 'Tee times & groups')]);
+    if (player) {
+      var pg = db.playerGroup(round.id, player.id);
+      if (pg) card.appendChild(h('div.note.note-green', { style: { marginBottom: '10px' } },
+        '⛳ Your tee time: ' + (pg.group.teeTime || 'TBC') + ' · Group ' + (pg.index + 1)));
+    }
+    groups.forEach(function (g, gi) {
+      var mine = player && (g.players || []).indexOf(player.id) > -1;
+      var names = (g.players || []).map(function (pid) { var p = db.getPlayer(pid); return p ? GT.displayName(p) : '—'; }).join(', ');
+      card.appendChild(h('div.tee-row' + (mine ? '.mine' : ''), {}, [
+        h('div.tee-time', {}, g.teeTime || '—'),
+        h('div.grow', {}, [h('div', { style: { fontWeight: 600 } }, 'Group ' + (gi + 1)), h('div.muted', {}, names)])
+      ]));
+    });
+    return card;
+  }
 
   // Read-only par / stroke-index / shots reference for a round.
   function scorecardReference(round, player) {

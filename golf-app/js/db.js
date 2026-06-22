@@ -68,6 +68,7 @@
       strokeIndex: new Array(18).fill(null),
       yardage: new Array(18).fill(null),
       imageDataUrl: null,
+      groups: [], // [{ id, players:[playerId], teeTime:'HH:MM' }] in play order
       configured: false
     };
   }
@@ -306,6 +307,40 @@
     return created;
   }
 
+  // ---- Tee groups (per round) ------------------------------------------
+  function getGroups(roundId) {
+    var r = getRound(roundId);
+    return (r && r.groups) || [];
+  }
+  function saveGroups(roundId, groups) {
+    return updateRound(roundId, { groups: groups });
+  }
+  /** Count how many times each pair has been grouped across the tournament's
+   *  other rounds — used to avoid repeat pairings when generating. */
+  function pairCounts(tournamentId, exceptRoundId) {
+    var counts = {};
+    getRoundsFor(tournamentId).forEach(function (r) {
+      if (r.id === exceptRoundId) return;
+      (r.groups || []).forEach(function (g) {
+        var ids = g.players || [];
+        for (var i = 0; i < ids.length; i++)
+          for (var j = i + 1; j < ids.length; j++) {
+            var k = GT.golf.pairKey(ids[i], ids[j]);
+            counts[k] = (counts[k] || 0) + 1;
+          }
+      });
+    });
+    return counts;
+  }
+  /** The group a player is in for a round: { group, index } or null. */
+  function playerGroup(roundId, playerId) {
+    var groups = getGroups(roundId);
+    for (var i = 0; i < groups.length; i++) {
+      if ((groups[i].players || []).indexOf(playerId) > -1) return { group: groups[i], index: i };
+    }
+    return null;
+  }
+
   // ---- Players (GLOBAL accounts) ---------------------------------------
   function getAllPlayers() { return load().players; }
   function getPlayer(id) {
@@ -496,6 +531,8 @@
     deleteTournament: deleteTournament, clearScores: clearScores, findTournamentByJoinCode: findTournamentByJoinCode,
     // rounds
     getRounds: getRounds, getRoundsFor: getRoundsFor, getRound: getRound, updateRound: updateRound, ensureRoundsFor: ensureRoundsFor,
+    // tee groups
+    getGroups: getGroups, saveGroups: saveGroups, pairCounts: pairCounts, playerGroup: playerGroup,
     // players (global)
     getAllPlayers: getAllPlayers, getPlayer: getPlayer, addPlayer: addPlayer, updatePlayer: updatePlayer, removePlayer: removePlayer,
     findDuplicateCdh: findDuplicateCdh, findPlayerByUsername: findPlayerByUsername, findDuplicateUsername: findDuplicateUsername,

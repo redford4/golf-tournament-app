@@ -399,6 +399,172 @@
     }
   });
 
+  // ===== Groups & Tee Times =============================================
+  function timeToMin(s) { var m = /^(\d{1,2}):(\d{2})$/.exec(s || ''); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+  function minToTime(n) { n = ((n % 1440) + 1440) % 1440; var hh = Math.floor(n / 60), mm = n % 60; return (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm; }
+
+  GT.router.register('groups', function (app, params) {
+    if (!requireAdmin(app)) return;
+    var t = db.getActiveTournament();
+    var rounds = db.getRounds();
+    var roundId = (params && params[0]) || (rounds[0] && rounds[0].id);
+    var round = db.getRound(roundId);
+
+    app.appendChild(h('h1.page-title', {}, 'Groups & Tee Times'));
+
+    var tabs = h('div.tabs');
+    rounds.forEach(function (r) {
+      tabs.appendChild(h('button' + (r.id === roundId ? '.active' : ''), {
+        onclick: function () { GT.router.go('groups', [r.id]); }
+      }, 'R' + r.index));
+    });
+    app.appendChild(tabs);
+
+    if (!round) { app.appendChild(GT.emptyState('❓', 'No round')); return; }
+    var members = db.getPlayers();
+    if (!members.length) { app.appendChild(GT.emptyState('👥', 'No members yet', 'Players need to join before you can make groups.')); return; }
+
+    // ---- Generator controls ----
+    var size = 4, mode = 'random';
+    var firstTime = h('input', { type: 'time', value: '08:00' });
+    var interval = h('input', { type: 'number', min: '1', value: '10', style: { width: '90px' } });
+
+    function segRow(values, current, onset) {
+      var row = h('div.seg-row');
+      var btns = values.map(function (v) {
+        return h('button.seg' + (v.val === current() ? '.active' : ''), { type: 'button',
+          onclick: function () { onset(v.val); Array.prototype.forEach.call(row.children, function (c, i) { c.classList.toggle('active', values[i].val === current()); }); } }, v.label);
+      });
+      btns.forEach(function (b) { row.appendChild(b); });
+      return row;
+    }
+
+    var controls = h('div.card.stack', {}, [
+      h('div.field', {}, [h('label', {}, 'Group size'),
+        segRow([{ val: 4, label: '4-ball' }, { val: 3, label: '3-ball' }, { val: 2, label: '2-ball' }], function () { return size; }, function (v) { size = v; })]),
+      h('div.field', {}, [h('label', {}, 'Method'),
+        segRow([{ val: 'random', label: 'Random (avoid repeats)' }, { val: 'ranking', label: 'Last day (reverse leaderboard)' }], function () { return mode; }, function (v) { mode = v; })]),
+      h('div.grid2', {}, [
+        h('div.field', {}, [h('label', {}, 'First tee time'), firstTime]),
+        h('div.field', {}, [h('label', {}, 'Interval (mins)'), interval])
+      ]),
+      h('div.btn-row', {}, [
+        h('button.btn.btn-primary', { onclick: generate }, '🎲 Generate groups'),
+        h('button.btn.btn-ghost', { onclick: clearGroups }, 'Clear')
+      ]),
+      h('div.hint', {}, members.length + ' members · ' + describeSizes(GT.golf.groupSizes(members.length, size)))
+    ]);
+    app.appendChild(controls);
+
+    function describeSizes(sizes) {
+      if (!sizes.length) return '';
+      var counts = {};
+      sizes.forEach(function (s) { counts[s] = (counts[s] || 0) + 1; });
+      return Object.keys(counts).sort().map(function (s) { return counts[s] + ' × ' + s + '-ball'; }).join(', ');
+    }
+
+    function rankingWorstFirst() {
+      // cumulative Stableford across configured rounds; fewest points = worst = first
+      var standing = members.map(function (p) {
+        var pts = 0, played = 0;
+        db.getRounds().forEach(function (r) {
+          if (!r.configured) return;
+          var res = util.result(r, p);
+          if (res.hasScore && res.points != null) { pts += res.points; played++; }
+        });
+        return { id: p.id, pts: pts, played: played };
+      });
+      standing.sort(function (a, b) { return a.pts - b.pts; }); // ascending = worst first
+      return standing.map(function (s) { return s.id; });
+    }
+
+    function generate() {
+      var ids = members.map(function (p) { return p.id; });
+      var opts = { mode: mode };
+      if (mode === 'ranking') opts.rankingWorstFirst = rankingWorstFirst();
+      else opts.pairCounts = db.pairCounts(t.id, round.id);
+      var arrays = GT.golf.makeGroups(ids, size, opts);
+      var base = timeToMin(firstTime.value); if (base == null) base = 8 * 60;
+      var step = parseInt(interval.value, 10) || 10;
+      var groups = arrays.map(function (ids2, i) {
+        return { id: db.uid('grp'), players: ids2, teeTime: minToTime(base + i * step) };
+      });
+      db.saveGroups(round.id, groups);
+      db.logAdmin('Generated ' + (mode === 'ranking' ? 'last-day' : 'random') + ' groups for R' + round.index);
+      GT.toast('Groups generated', 'success');
+      GT.router.render();
+    }
+    function clearGroups() {
+      if (!db.getGroups(round.id).length) return;
+      GT.confirm('Clear all groups for Round ' + round.index + '?', function () {
+        db.saveGroups(round.id, []); GT.toast('Groups cleared', 'success'); GT.router.render();
+      });
+    }
+
+    // ---- Current groups ----
+    var groups = db.getGroups(round.id);
+    var assigned = {};
+    groups.forEach(function (g) { (g.players || []).forEach(function (pid) { assigned[pid] = true; }); });
+    var unassigned = members.filter(function (p) { return !assigned[p.id]; });
+
+    function memberById(id) { return members.filter(function (p) { return p.id === id; })[0]; }
+    function move(pid, fromIdx, toVal) {
+      var gs = db.getGroups(round.id).map(function (g) { return { id: g.id, players: g.players.slice(), teeTime: g.teeTime }; });
+      if (fromIdx != null) gs[fromIdx].players = gs[fromIdx].players.filter(function (x) { return x !== pid; });
+      if (toVal !== 'x') gs[+toVal].players.push(pid);
+      gs = gs.filter(function (g) { return g.players.length; }); // drop emptied groups
+      db.saveGroups(round.id, gs); GT.router.render();
+    }
+    function setTee(idx, val) {
+      var gs = db.getGroups(round.id).map(function (g) { return { id: g.id, players: g.players.slice(), teeTime: g.teeTime }; });
+      gs[idx].teeTime = val; db.saveGroups(round.id, gs);
+    }
+
+    if (!groups.length) {
+      app.appendChild(GT.emptyState('⛳', 'No groups yet', 'Pick a size and method above, then Generate.'));
+    } else {
+      var list = h('div.stack');
+      groups.forEach(function (g, gi) {
+        var tee = h('input', { type: 'time', value: g.teeTime || '', style: { width: '120px' },
+          onchange: function () { setTee(gi, tee.value); } });
+        var players = (g.players || []).map(function (pid) {
+          var p = memberById(pid);
+          if (!p) return null;
+          var sel = h('select', { onchange: function () { move(pid, gi, sel.value); } },
+            groups.map(function (_, j) { return h('option', { value: String(j) }, 'Group ' + (j + 1)); })
+              .concat([h('option', { value: 'x' }, 'Remove')]));
+          sel.value = String(gi);
+          return h('div.grp-player', {}, [
+            h('div.grow', {}, [h('span', {}, GT.displayName(p)), h('span.muted', { style: { marginLeft: '6px' } }, 'HI ' + GT.fmtHi(p.handicapIndex))]),
+            sel
+          ]);
+        }).filter(Boolean);
+        list.appendChild(h('div.card', {}, [
+          h('div.spread', { style: { marginBottom: '8px' } }, [
+            h('h3', {}, 'Group ' + (gi + 1) + (gi === 0 ? ' (off first)' : '')),
+            h('div.card-row', {}, [h('span.muted', {}, '🕐'), tee])
+          ]),
+          h('div.stack', {}, players)
+        ]));
+      });
+      app.appendChild(list);
+    }
+
+    if (unassigned.length) {
+      var u = h('div.stack');
+      unassigned.forEach(function (p) {
+        var sel = h('select', { onchange: function () { if (sel.value !== '') move(p.id, null, sel.value); } },
+          [h('option', { value: '' }, 'Add to…')].concat(groups.map(function (_, j) { return h('option', { value: String(j) }, 'Group ' + (j + 1)); })));
+        u.appendChild(h('div.card.grp-player', {}, [
+          h('div.grow', {}, [h('span', {}, GT.displayName(p)), h('span.muted', { style: { marginLeft: '6px' } }, 'HI ' + GT.fmtHi(p.handicapIndex))]),
+          groups.length ? sel : h('span.badge.badge-grey', {}, 'generate first')
+        ]));
+      });
+      app.appendChild(h('h2.section-title', {}, 'Unassigned (' + unassigned.length + ')'));
+      app.appendChild(u);
+    }
+  });
+
   // ===== Score management ===============================================
   GT.router.register('scores', function (app, params) {
     if (!requireAdmin(app)) return;
