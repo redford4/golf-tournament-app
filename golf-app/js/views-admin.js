@@ -305,11 +305,72 @@
     // Per-hole photos (saved instantly, independent of the Save button).
     var holeImgs = (round.holeImages || new Array(18).fill(null)).slice();
     var holePhotoWrap = h('div.card');
+
+    // Pull the first number 1..maxHole out of a file name (e.g. "hole-7.jpg" -> 7).
+    function holeNumFromName(name, maxHole) {
+      var base = String(name).replace(/\.[^.]+$/, '');
+      var groups = base.match(/\d+/g);
+      if (!groups) return null;
+      for (var i = 0; i < groups.length; i++) {
+        var v = parseInt(groups[i], 10);
+        if (v >= 1 && v <= maxHole) return v;
+      }
+      return null;
+    }
+
+    function bulkUpload(files, statusEl, btn) {
+      var hn = parseInt(meta.numHoles.value, 10) || 18;
+      var jobs = [], skipped = [];
+      Array.prototype.slice.call(files).forEach(function (f) {
+        var num = holeNumFromName(f.name, hn);
+        if (num) jobs.push({ file: f, hole: num }); else skipped.push(f.name);
+      });
+      if (!jobs.length) { GT.toast('No files named 1–' + hn + ' were found (e.g. 1.jpg, 2.jpg).', 'error'); return; }
+      // last file wins if two map to the same hole
+      jobs.sort(function (a, b) { return a.hole - b.hole; });
+      var i = 0, done = 0, assigned = 0;
+      btn.disabled = true;
+      function setStatus() { statusEl.textContent = 'Uploading ' + Math.min(done + 1, jobs.length) + ' / ' + jobs.length + '…'; }
+      setStatus();
+      function next() {
+        if (i >= jobs.length) {
+          db.updateRound(round.id, { holeImages: holeImgs.slice() });
+          btn.disabled = false; statusEl.textContent = '';
+          renderHolePhotos();
+          GT.toast(assigned + ' photo' + (assigned === 1 ? '' : 's') + ' assigned' + (skipped.length ? (' · ' + skipped.length + ' skipped') : ''), 'success');
+          return;
+        }
+        var job = jobs[i++];
+        GT.compressImage(job.file, 1280).then(function (blob) {
+          return GT.cloud.uploadImage(blob, 'rounds/' + round.id + '/holes/h' + job.hole + '-' + Date.now() + '.jpg');
+        }).then(function (url) {
+          holeImgs[job.hole - 1] = url; assigned++;
+        }).catch(function () {
+          skipped.push(job.file.name);
+        }).then(function () { done++; setStatus(); next(); });
+      }
+      next();
+    }
+
     function renderHolePhotos() {
       GT.clear(holePhotoWrap);
-      holePhotoWrap.appendChild(h('div.muted', { style: { marginBottom: '8px', fontWeight: '600' } }, 'Hole photos'));
-      holePhotoWrap.appendChild(h('div.hint', { style: { marginBottom: '6px' } }, 'Optional overview photo for each hole — shown to players while they enter that hole’s score.'));
       var hn = parseInt(meta.numHoles.value, 10) || 18;
+      holePhotoWrap.appendChild(h('div.muted', { style: { marginBottom: '8px', fontWeight: '600' } }, 'Hole photos'));
+      holePhotoWrap.appendChild(h('div.hint', { style: { marginBottom: '10px' } }, 'Optional overview photo for each hole — shown to players while they enter that hole’s score.'));
+
+      // --- Bulk upload ---
+      var bulkInput = h('input', { type: 'file', accept: 'image/*', multiple: true, style: { display: 'none' } });
+      var bulkStatus = h('span.muted', { style: { fontSize: '.85rem' } });
+      var bulkBtn = h('button.btn.btn-primary.btn-sm', { type: 'button',
+        onclick: function () { bulkInput.value = ''; bulkInput.click(); } }, '⬆ Bulk upload 1–' + hn);
+      bulkInput.addEventListener('change', function () { if (bulkInput.files && bulkInput.files.length) bulkUpload(bulkInput.files, bulkStatus, bulkBtn); });
+      holePhotoWrap.appendChild(h('div.note.note-blue', { style: { marginBottom: '12px' } }, [
+        h('div', { style: { fontWeight: 600, marginBottom: '4px' } }, 'Bulk upload'),
+        h('div', { style: { marginBottom: '8px' } }, 'Select photos named by hole number (1.jpg, 2.jpg … ' + hn + '.jpg). Each is placed on its hole automatically. Re-uploading a number replaces that hole.'),
+        h('div.card-row', {}, [bulkInput, bulkBtn, bulkStatus])
+      ]));
+
+      // --- Per-hole manual uploads ---
       for (var i = 0; i < hn; i++) {
         (function (i) {
           holePhotoWrap.appendChild(h('div.hole-photo-row', {}, [
