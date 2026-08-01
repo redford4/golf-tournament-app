@@ -228,6 +228,20 @@
   });
 
   // Tee times / groups for a round (shown to players and viewers).
+  // Compact banner of the logged-in player's group + tee time, for the top of
+  // the score-entry / round forms. Returns null if they aren't in a group.
+  GT.teeBanner = function (round, player) {
+    if (!round || !player) return null;
+    var pg = db.playerGroup(round.id, player.id);
+    if (!pg) return null;
+    var mates = (pg.group.players || []).filter(function (pid) { return pid !== player.id; })
+      .map(function (pid) { var p = db.getPlayer(pid); return p ? GT.displayName(p) : null; }).filter(Boolean);
+    return h('div.note.note-green.tee-banner', {}, [
+      h('div', { style: { fontWeight: 700 } }, '⛳ Group ' + (pg.index + 1) + ' · Tee off ' + (pg.group.teeTime || 'TBC')),
+      mates.length ? h('div', { style: { fontSize: '.85rem', marginTop: '2px' } }, 'Playing with ' + mates.join(', ')) : null
+    ]);
+  };
+
   function teeTimesCard(round, player) {
     var groups = db.getGroups(round.id);
     if (!groups.length) return null;

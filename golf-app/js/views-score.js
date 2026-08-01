@@ -69,6 +69,9 @@
     app.appendChild(h('h1.page-title', {}, 'Hole-by-Hole'));
     if (!guard(round, player, app)) return;
 
+    var teeB = GT.teeBanner(round, player);
+    if (teeB) app.appendChild(teeB);
+
     var rec = db.getScore(round.id, player.id);
     if (!rec || rec.mode !== 'A') { rec = db.blankScore(round.id, player.id, 'A'); if (rec) db.saveScore(rec); }
     var n = round.numHoles || 18;
@@ -289,6 +292,9 @@
     app.appendChild(h('h1.page-title', {}, 'Summary Entry'));
     app.appendChild(h('p.page-sub', {}, 'Round ' + (round ? round.index : '') + ' · ' + (round ? round.courseName : '')));
     if (!guard(round, player, app)) return;
+
+    var teeB = GT.teeBanner(round, player);
+    if (teeB) app.appendChild(teeB);
 
     var rec = db.getScore(round.id, player.id);
     if (!rec || rec.mode !== 'B') rec = db.blankScore(round.id, player.id, 'B');
