@@ -91,6 +91,11 @@
       ]));
     }
 
+    if (GT.tournamentComplete && GT.tournamentComplete()) {
+      app.appendChild(h('button.btn.btn-block.final-cta', {
+        onclick: function () { GT.router.go('results'); } }, '🏆 Tournament complete — see the winner!'));
+    }
+
     app.appendChild(h('h2.section-title', {}, 'Rounds'));
     var rounds = db.getRounds();
     var list = h('div.stack');

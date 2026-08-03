@@ -24,8 +24,177 @@
     if (!db.getPlayers().length) { app.appendChild(GT.emptyState('🏆', 'No players yet', 'Leaderboards appear once golfers register and score.')); return; }
     if (!rounds.length) { app.appendChild(GT.emptyState('🗺', 'No courses configured', 'The admin needs to set up at least one round.')); return; }
 
+    if (GT.tournamentComplete()) {
+      app.appendChild(h('button.btn.btn-primary.btn-block.final-cta', { style: { marginBottom: '14px' },
+        onclick: function () { GT.router.go('results'); } }, '🏆 Tournament complete — see the winner!'));
+    }
+
     if (view === 'round') renderRound(app, rounds, roundId);
     else renderOverall(app, rounds);
+  });
+
+  // ---- Final standings with tie-breaks --------------------------------
+  // Has every member submitted every configured round? (a picked-up/NR hole
+  // still counts as submitted; a blank hole does not).
+  function roundDone(round, player) {
+    var rec = db.getScore(round.id, player.id);
+    if (!rec) return false;
+    if (rec.mode === 'B') return rec.summaryGross != null;
+    var n = round.numHoles || 18;
+    for (var i = 0; i < n; i++) { if (rec.holes[i] == null) return false; }
+    return true;
+  }
+
+  GT.tournamentComplete = function () {
+    var t = db.getActiveTournament();
+    if (!t) return false;
+    var rounds = db.getRoundsFor(t.id).filter(function (r) { return r.configured; });
+    var members = db.getPlayers();
+    if (!rounds.length || !members.length) return false;
+    return members.every(function (p) {
+      return rounds.every(function (r) { return roundDone(r, p); });
+    });
+  };
+
+  // Final standings, sorted best-first with the tie-break chain:
+  // total Stableford → last round Stableford → last round back-9 Stableford.
+  GT.finalStandings = function () {
+    var t = db.getActiveTournament();
+    var rounds = db.getRoundsFor(t.id).filter(function (r) { return r.configured; });
+    var members = db.getPlayers();
+    var lastRound = rounds[rounds.length - 1];
+
+    var rows = members.map(function (p) {
+      var total = 0, gross = 0, net = 0, anyNet = false;
+      var perRound = rounds.map(function (r) {
+        var res = util.result(r, p);
+        if (res.points != null) total += res.points;
+        if (res.gross != null) gross += res.gross;
+        if (res.net != null) { net += res.net; anyNet = true; }
+        return { round: r, points: res.points, gross: res.gross, net: res.net, mode: res.mode, complete: res.complete, courseHcp: res.courseHcp };
+      });
+      var lr = util.result(lastRound, p);
+      var lrBack9 = null;
+      if (lr.mode === 'A' && lr.record) {
+        var comp = GT.golf.computeRound(lastRound, util.courseHcp(lastRound, p) || 0, lr.record.holes);
+        lrBack9 = comp.totals.backPoints;
+      }
+      return { player: p, total: total, gross: gross, net: anyNet ? net : null,
+        perRound: perRound, lrPoints: lr.points || 0, lrBack9: lrBack9 };
+    });
+
+    rows.sort(function (a, b) {
+      if (b.total !== a.total) return b.total - a.total;
+      if (b.lrPoints !== a.lrPoints) return b.lrPoints - a.lrPoints;
+      if (a.lrBack9 != null && b.lrBack9 != null && b.lrBack9 !== a.lrBack9) return b.lrBack9 - a.lrBack9;
+      return GT.displayName(a.player).localeCompare(GT.displayName(b.player));
+    });
+
+    // Positions: share a place only when every tie-break key is equal.
+    function key(r) { return r.total + '|' + r.lrPoints + '|' + (r.lrBack9 == null ? 'x' : r.lrBack9); }
+    var lastKey = null, lastPos = 0;
+    rows.forEach(function (r, i) {
+      if (i > 0 && key(r) === lastKey) { r.pos = lastPos; r.tie = true; rows[i - 1].tie = true; }
+      else { r.pos = i + 1; lastPos = r.pos; r.tie = false; }
+      lastKey = key(r);
+    });
+    return { rows: rows, rounds: rounds, lastRound: lastRound };
+  };
+
+  function medal(pos) { return pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : String(pos); }
+
+  function confetti() {
+    var wrap = h('div.confetti', { 'aria-hidden': 'true' });
+    var colors = ['#ffd23f', '#0b6e4f', '#1b6ca8', '#e0533d', '#8e44ad', '#ff8fab'];
+    for (var i = 0; i < 60; i++) {
+      wrap.appendChild(h('span.confetti-bit', { style: {
+        left: Math.random() * 100 + '%',
+        background: colors[i % colors.length],
+        animationDelay: (Math.random() * 3).toFixed(2) + 's',
+        animationDuration: (2.6 + Math.random() * 2.4).toFixed(2) + 's',
+        transform: 'rotate(' + Math.floor(Math.random() * 360) + 'deg)'
+      } }));
+    }
+    return wrap;
+  }
+
+  // ---- Results / winner page (celebratory) ----------------------------
+  GT.router.register('results', function (app) {
+    var t = db.getActiveTournament();
+    if (!t) { GT.router.go('login'); return; }
+    var back = h('button.btn.btn-outline.btn-block', { style: { marginTop: '14px' },
+      onclick: function () { GT.router.go('leaderboard', [], { view: 'overall' }); } }, '← Back to leaderboard');
+
+    if (!GT.tournamentComplete()) {
+      app.appendChild(h('h1.page-title', {}, 'Final Results'));
+      app.appendChild(GT.emptyState('⛳', 'Not finished yet', 'The winner is revealed once every player has completed every round.'));
+      app.appendChild(back);
+      return;
+    }
+
+    var data = GT.finalStandings();
+    var rows = data.rows, winner = rows[0];
+    var wonOnCountback = rows.length > 1 && rows[1].total === winner.total;
+
+    app.appendChild(confetti());
+
+    // Hero
+    app.appendChild(h('div.results-hero', {}, [
+      h('div.rh-trophy', {}, '🏆'),
+      h('div.rh-label', {}, 'CHAMPION'),
+      h('div.rh-name', {}, GT.displayName(winner.player)),
+      h('div.rh-points', {}, [h('span.rh-num', {}, String(winner.total)), h('span.rh-unit', {}, ' pts')]),
+      h('div.rh-sub', {}, winner.total + ' Stableford points across ' + data.rounds.length + ' round' + (data.rounds.length === 1 ? '' : 's')),
+      wonOnCountback ? h('div.rh-countback', {}, '✦ Won on countback (better final round)') : null,
+      h('div.rh-tourn', {}, t.name)
+    ]));
+
+    // Podium (2nd, 1st, 3rd)
+    var podium = h('div.podium');
+    [1, 0, 2].forEach(function (idx) {
+      var r = rows[idx];
+      if (!r) { podium.appendChild(h('div.podium-col.empty')); return; }
+      var place = idx + 1;
+      podium.appendChild(h('div.podium-col.p' + place, {}, [
+        h('div.podium-medal', {}, medal(place)),
+        h('div.podium-name', {}, GT.displayName(r.player)),
+        h('div.podium-pts', {}, r.total + ' pts'),
+        h('div.podium-block', {}, h('span', {}, place === 1 ? '1st' : place === 2 ? '2nd' : '3rd'))
+      ]));
+    });
+    app.appendChild(podium);
+
+    // Winner's round-by-round breakdown
+    var breakdown = h('div.card', {}, [h('div.muted', { style: { fontWeight: 600, marginBottom: '8px' } }, '🏅 ' + GT.displayName(winner.player) + ' — winning card')]);
+    var rowsEls = winner.perRound.map(function (pr) {
+      return h('div.kv', {}, [
+        h('span.k', {}, 'R' + pr.round.index + ' · ' + (pr.round.courseName || 'Course')),
+        h('span.v', {}, (pr.points != null ? pr.points + ' pts' : '—') + (pr.gross != null ? ' · ' + pr.gross + ' gross' : ''))
+      ]);
+    });
+    breakdown.appendChild(h('div', {}, rowsEls));
+    breakdown.appendChild(h('div.kv', { style: { borderTop: '2px solid var(--green)', marginTop: '4px' } }, [
+      h('span.k', { style: { fontWeight: 700 } }, 'Total'),
+      h('span.v', { style: { fontWeight: 800, color: 'var(--green-dark)' } }, winner.total + ' pts · ' + winner.gross + ' gross' + (winner.net != null ? ' · ' + winner.net + ' net' : ''))
+    ]));
+    app.appendChild(breakdown);
+
+    // Full final standings
+    app.appendChild(h('h2.section-title', {}, 'Final standings'));
+    var list = h('div.stack');
+    rows.forEach(function (r) {
+      list.appendChild(h('div.card.card-row' + (r.pos === 1 ? '.winner-row' : ''), {}, [
+        h('div.fs-pos', {}, (r.tie ? '=' : '') + (r.pos <= 3 ? medal(r.pos) : r.pos)),
+        h('div.grow', {}, [h('h3', {}, GT.displayName(r.player)),
+          h('div.muted', {}, r.gross + ' gross' + (r.net != null ? ' · ' + r.net + ' net' : ''))]),
+        h('div.fs-pts', {}, [h('div.v', {}, r.total), h('div.k', {}, 'pts')])
+      ]));
+    });
+    app.appendChild(list);
+
+    app.appendChild(h('div.muted', { style: { fontSize: '.78rem', marginTop: '8px' } },
+      'Ties broken by better final round, then better back 9 of the final round — all on Stableford points.'));
+    app.appendChild(back);
   });
 
   function header(label, key, st, onSort, cls) {
