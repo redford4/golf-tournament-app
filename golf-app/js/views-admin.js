@@ -30,7 +30,9 @@
       h('button.btn.btn-primary.btn-sm', { onclick: function () { GT.router.go('setup'); } }, '⚙ Setup'),
       h('button.btn.btn-outline.btn-sm', { onclick: function () { GT.router.go('courses'); } }, '🗺 Courses'),
       h('button.btn.btn-outline.btn-sm', { onclick: function () { GT.router.go('members'); } }, '👥 Members'),
-      h('button.btn.btn-outline.btn-sm', { onclick: function () { GT.router.go('scores'); } }, '📝 Scores')
+      h('button.btn.btn-outline.btn-sm', { onclick: function () { GT.router.go('scores'); } }, '📝 Scores'),
+      h('button.btn.btn-outline.btn-sm', { onclick: function () { GT.router.go('results'); } },
+        (GT.tournamentComplete && GT.tournamentComplete()) ? '🏆 Results' : '🏆 Preview results')
     ]));
 
     app.appendChild(h('div.note.note-green', {}, [

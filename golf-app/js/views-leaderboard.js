@@ -123,25 +123,47 @@
     var t = db.getActiveTournament();
     if (!t) { GT.router.go('login'); return; }
     var back = h('button.btn.btn-outline.btn-block', { style: { marginTop: '14px' },
-      onclick: function () { GT.router.go('leaderboard', [], { view: 'overall' }); } }, '← Back to leaderboard');
+      onclick: function () {
+        if (GT.state.isAdmin()) GT.router.go('admin');
+        else GT.router.go('leaderboard', [], { view: 'overall' });
+      } }, GT.state.isAdmin() ? '← Back to dashboard' : '← Back to leaderboard');
 
-    if (!GT.tournamentComplete()) {
+    var complete = GT.tournamentComplete();
+    var isAdmin = GT.state.isAdmin();
+
+    // Not finished: players see a "come back later" note; the organiser gets a
+    // provisional preview of how the podium looks so far.
+    if (!complete && !isAdmin) {
       app.appendChild(h('h1.page-title', {}, 'Final Results'));
       app.appendChild(GT.emptyState('⛳', 'Not finished yet', 'The winner is revealed once every player has completed every round.'));
       app.appendChild(back);
       return;
     }
+    var preview = !complete;
 
     var data = GT.finalStandings();
     var rows = data.rows, winner = rows[0];
+    if (!winner) {
+      app.appendChild(h('h1.page-title', {}, 'Final Results'));
+      app.appendChild(GT.emptyState('👥', 'No players yet'));
+      app.appendChild(back);
+      return;
+    }
     var wonOnCountback = rows.length > 1 && rows[1].total === winner.total;
+
+    if (preview) {
+      var members = db.getPlayers();
+      var remaining = members.filter(function (p) { return !data.rounds.every(function (r) { return roundDone(r, p); }); }).length;
+      app.appendChild(h('div.note.note-amber', { style: { marginBottom: '12px' } },
+        '👀 Preview — provisional standings. ' + remaining + ' player' + (remaining === 1 ? '' : 's') + ' still to finish. The winner may change.'));
+    }
 
     app.appendChild(confetti());
 
     // Hero
     app.appendChild(h('div.results-hero', {}, [
       h('div.rh-trophy', {}, '🏆'),
-      h('div.rh-label', {}, 'CHAMPION'),
+      h('div.rh-label', {}, preview ? 'CURRENT LEADER' : 'CHAMPION'),
       h('div.rh-name', {}, GT.displayName(winner.player)),
       h('div.rh-points', {}, [h('span.rh-num', {}, String(winner.total)), h('span.rh-unit', {}, ' pts')]),
       h('div.rh-sub', {}, winner.total + ' Stableford points across ' + data.rounds.length + ' round' + (data.rounds.length === 1 ? '' : 's')),
