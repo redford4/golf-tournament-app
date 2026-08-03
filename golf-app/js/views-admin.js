@@ -81,9 +81,12 @@
   });
 
   function countSubmissions() {
+    // Only scores for THIS tournament (scores are keyed globally across all).
+    var tid = db.getActiveTournamentId();
     var d = db.load();
     return Object.keys(d.scores).filter(function (k) {
       var s = d.scores[k];
+      if (s.tournamentId !== tid) return false;
       return s.mode === 'A' ? s.holes.some(function (x) { return x != null; }) : s.summaryGross != null;
     }).length;
   }
@@ -507,8 +510,29 @@
 
     // ---- Generator controls ----
     var size = 4, mode = 'random';
-    var firstTime = h('input', { type: 'time', value: '08:00' });
-    var interval = h('input', { type: 'number', min: '1', value: '10', style: { width: '90px' } });
+    // Seed the First tee / Interval fields from the existing draw so they show
+    // the current times (and don't reset after an auto-save).
+    var seedG = db.getGroups(round.id);
+    var seedFirst = (seedG[0] && seedG[0].teeTime) || '08:00';
+    var seedInterval = 10;
+    if (seedG.length >= 2 && seedG[0].teeTime && seedG[1].teeTime) {
+      var d = timeToMin(seedG[1].teeTime) - timeToMin(seedG[0].teeTime);
+      if (d > 0) seedInterval = d;
+    }
+    var firstTime = h('input', { type: 'time', value: seedFirst, onchange: function () { applyTeeTimes(true); } });
+    var interval = h('input', { type: 'number', min: '1', value: String(seedInterval), style: { width: '90px' }, onchange: function () { applyTeeTimes(true); } });
+
+    // Re-space every existing group's tee time from First tee + Interval, and save.
+    function applyTeeTimes(announce) {
+      var gs = db.getGroups(round.id);
+      if (!gs.length) return; // no groups yet — these fields apply on Generate
+      var base = timeToMin(firstTime.value); if (base == null) base = 8 * 60;
+      var step = parseInt(interval.value, 10) || 10;
+      var updated = gs.map(function (g, i) { return { id: g.id, players: g.players.slice(), teeTime: minToTime(base + i * step) }; });
+      db.saveGroups(round.id, updated);
+      if (announce) GT.toast('Tee times updated', 'success');
+      GT.router.render();
+    }
 
     function segRow(values, current, onset) {
       var row = h('div.seg-row');
@@ -529,6 +553,7 @@
         h('div.field', {}, [h('label', {}, 'First tee time'), firstTime]),
         h('div.field', {}, [h('label', {}, 'Interval (mins)'), interval])
       ]),
+      h('div.hint', { style: { marginTop: '-4px' } }, 'Changing the first tee time or interval re-spaces every group’s tee time and saves automatically. You can also edit a single group’s time below.'),
       h('div.btn-row', {}, [
         h('button.btn.btn-primary', { onclick: generate }, '🎲 Generate groups'),
         h('button.btn.btn-ghost', { onclick: clearGroups }, 'Clear')
@@ -599,6 +624,7 @@
     function setTee(idx, val) {
       var gs = db.getGroups(round.id).map(function (g) { return { id: g.id, players: g.players.slice(), teeTime: g.teeTime }; });
       gs[idx].teeTime = val; db.saveGroups(round.id, gs);
+      GT.toast('Group ' + (idx + 1) + ' tee time saved', 'success');
     }
 
     if (!groups.length) {
