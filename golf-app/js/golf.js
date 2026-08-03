@@ -84,44 +84,50 @@
   function computeRound(round, courseHcp, grossArray) {
     var n = round.numHoles || 18;
     var holes = [];
-    var totGross = 0, totNet = 0, totPoints = 0, played = 0;
+    var totGross = 0, totNet = 0, totPoints = 0, played = 0, entered = 0;
     var frontPoints = 0, backPoints = 0, frontGross = 0, backGross = 0;
 
     for (var i = 0; i < n; i++) {
       var par = Number(round.par[i]);
       var si = Number(round.strokeIndex[i]);
       var shots = shotsReceived(courseHcp, si);
-      // A hole is "No Return" if blank, explicitly picked up ('NR'), or otherwise
-      // not a valid number. NR holes score 0 points and are excluded from totals.
+      // An entry of 0 or 'NR' is a No Return: it's still an ENTRY (so the card
+      // isn't incomplete), but scores 0 points and is excluded from totals.
+      // A blank hole (null/'') has NO entry, and makes the card incomplete.
       var raw = grossArray ? grossArray[i] : null;
-      var gross = (raw != null && raw !== '' && raw !== 'NR' && !isNaN(Number(raw)))
-        ? Number(raw) : null;
-      var nr = gross == null;
-      var net = nr ? null : netScore(gross, shots);
+      var isEntered = !(raw == null || raw === '');
+      var num = Number(raw);
+      var isReal = isEntered && raw !== 'NR' && !isNaN(num) && num > 0;
+      var gross = isReal ? num : null;
+      var nr = !isReal; // no gross counted (blank, 0, or NR)
+      var net = isReal ? netScore(gross, shots) : null;
       var pts = stablefordPoints(par, net);
 
-      if (!nr) {
+      if (isReal) {
         totGross += gross;
         totNet += net;
         played++;
         if (i < 9) { frontGross += gross; } else { backGross += gross; }
       }
+      if (isEntered) entered++;
       totPoints += pts;
       if (i < 9) { frontPoints += pts; } else { backPoints += pts; }
 
       holes.push({
         hole: i + 1, par: par, si: si, shots: shots,
-        gross: gross, net: net, points: pts, nr: nr
+        gross: gross, net: net, points: pts, nr: nr, entered: isEntered
       });
     }
 
     return {
       holes: holes,
       totals: {
-        gross: totGross, net: totNet, points: totPoints, played: played,
+        gross: totGross, net: totNet, points: totPoints, played: played, entered: entered,
         frontPoints: frontPoints, backPoints: backPoints,
         frontGross: frontGross, backGross: backGross,
-        complete: played === n
+        // "Complete" now means every hole has an ENTRY (a score, 0, or NR) —
+        // No Returns don't make a card incomplete; only blank holes do.
+        complete: entered === n
       }
     };
   }

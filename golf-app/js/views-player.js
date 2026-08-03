@@ -34,8 +34,9 @@
         out.net = comp.totals.net;
         out.points = comp.totals.points;
         out.played = comp.totals.played;
+        out.entered = comp.totals.entered;
         out.complete = comp.totals.complete;
-        out.hasScore = comp.totals.played > 0;
+        out.hasScore = comp.totals.entered > 0;
         out.detail = comp;
       } else {
         out.gross = rec.summaryGross;

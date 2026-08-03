@@ -80,6 +80,9 @@
     var progress = h('div.note.note-green.sh-progress');
     app.appendChild(progress);
 
+    app.appendChild(h('div.hint', { style: { margin: '0 2px 10px' } },
+      'Didn’t finish a hole? Enter 0 (or tap “Pick up”) — it scores 0 points and still counts as played, so your card isn’t marked incomplete. Leave a hole blank only if you haven’t played it yet.'));
+
     var holeList = h('div.hole-list');
     app.appendChild(holeList);
 
@@ -93,10 +96,10 @@
     function refreshTotals() {
       var comp = golf.computeRound(round, ch, rec.holes);
       var tot = comp.totals;
-      var pct = Math.round((tot.played / n) * 100);
+      var pct = Math.round((tot.entered / n) * 100);
       GT.clear(progress);
       progress.appendChild(h('div.spread', {}, [
-        h('div', {}, [h('b', {}, tot.played + ' / ' + n + ' holes'),
+        h('div', {}, [h('b', {}, tot.entered + ' / ' + n + ' holes'),
           h('span.muted', { style: { marginLeft: '8px' } }, 'F9 ' + tot.frontPoints + ' · B9 ' + tot.backPoints)]),
         h('div', {}, [h('b', {}, tot.points + ' pts'), h('span.muted', { style: { marginLeft: '8px' } }, 'Gross ' + tot.gross)])
       ]));
@@ -126,13 +129,16 @@
       }
     }
 
-    // Set a hole's score: value is a positive int, 'NR', or null (clear).
+    // Set a hole's score: value is 0 or 'NR' (no return), a positive int, or
+    // null (clear/blank). 0 counts as an entry, so it doesn't leave the card
+    // incomplete.
     function setScore(i, value, advance) {
       if (value === 'NR') { rec.holes[i] = 'NR'; }
       else if (value == null || value === '') { rec.holes[i] = null; }
       else {
         var num = parseInt(value, 10);
-        if (isNaN(num) || num < 1) { rec.holes[i] = null; }
+        if (isNaN(num) || num < 0) { rec.holes[i] = null; }
+        else if (num === 0) { rec.holes[i] = 0; } // 0 = no return
         else {
           if (num > 20) num = 20;
           rec.holes[i] = num;
@@ -150,8 +156,8 @@
       var si = Number(round.strokeIndex[i]);
       var shots = golf.shotsReceived(ch, si);
       var raw = rec.holes[i];
-      var isNR = raw === 'NR';
-      var hasGross = raw != null && raw !== '' && raw !== 'NR' && !isNaN(Number(raw));
+      var isNR = raw === 'NR' || raw === 0;         // 0 = no return
+      var hasGross = raw != null && raw !== '' && raw !== 'NR' && !isNaN(Number(raw)) && Number(raw) > 0;
       var gross = hasGross ? Number(raw) : null;
       var net = gross == null ? null : gross - shots;
       var pts = (gross == null) ? 0 : golf.stablefordPoints(par, net);
@@ -191,9 +197,9 @@
 
       // --- Entry row: − [input] + ---
       var input = h('input', {
-        type: 'number', inputmode: 'numeric', min: '1', max: '20',
+        type: 'number', inputmode: 'numeric', min: '0', max: '20',
         enterkeyhint: (i === n - 1) ? 'done' : 'next',
-        value: hasGross ? gross : '', placeholder: '–',
+        value: hasGross ? gross : (raw === 0 ? '0' : ''), placeholder: '–',
         onfocus: function () { setActive(i); input.select && input.select(); }
       });
       inputEls[i] = input;
