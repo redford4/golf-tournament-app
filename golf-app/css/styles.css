@@ -288,6 +288,9 @@ table.lb tbody tr.lb-row:active { background: var(--green-light); }
 table.lb td.name { position: relative; }
 table.lb tbody tr.lb-row td.name::after { content: " ›"; color: var(--muted); font-weight: 700; }
 table.lb td.hi { font-weight: 700; color: var(--green-dark); }
+table.lb th.rcol, table.lb td.rcol { min-width: 30px; padding-left: 6px; padding-right: 6px; color: var(--muted); }
+table.lb th.total, table.lb td.total { border-left: 2px solid var(--line); }
+table.lb td.total { font-weight: 800; color: var(--green-dark); }
 .you-row { background: var(--green-light) !important; }
 
 /* ---- Misc ---- */

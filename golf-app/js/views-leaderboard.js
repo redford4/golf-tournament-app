@@ -330,20 +330,19 @@
   function renderOverall(app, rounds) {
     var me = GT.state.currentPlayer();
     var rows = db.getPlayers().map(function (p) {
-      var gross = 0, net = 0, points = 0, played = 0, anyNet = false, anyScore = false, allComplete = true, anyB = false;
-      rounds.forEach(function (round) {
+      var points = 0, played = 0, anyScore = false, allComplete = true, anyB = false;
+      var roundPts = rounds.map(function (round) {
         var res = util.result(round, p);
-        if (!res.hasScore) { allComplete = false; return; }
+        if (!res.hasScore) { allComplete = false; return null; }
         anyScore = true; played++;
-        if (res.gross != null) gross += res.gross;
         if (res.points != null) points += res.points;
-        if (res.net != null) { net += res.net; anyNet = true; }
         if (!res.complete) allComplete = false;
         if (res.mode === 'B') anyB = true;
+        return { pts: res.points, incomplete: !res.complete, modeB: res.mode === 'B' };
       });
       return {
-        id: p.id, name: GT.displayName(p), you: me && me.id === p.id, hi: p.handicapIndex,
-        gross: anyScore ? gross : null, net: anyNet ? net : null, points: anyScore ? points : null,
+        id: p.id, name: GT.displayName(p), you: me && me.id === p.id,
+        points: anyScore ? points : null, roundPts: roundPts,
         rounds: played, incomplete: anyScore && (played < rounds.length || !allComplete),
         modeB: anyB, hasScore: anyScore
       };
@@ -359,25 +358,22 @@
 
     var head = h('tr', {}, [
       h('th.pos', {}, '#'),
-      header('Player', 'name', st, onSort, '.name'),
-      header('HI', 'hi', st, onSort),
-      header('Gross', 'gross', st, onSort),
-      header('Net', 'net', st, onSort),
-      header('Points', 'points', st, onSort),
-      h('th', {}, 'Rds')
-    ]);
+      header('Player', 'name', st, onSort, '.name')
+    ].concat(rounds.map(function (round) {
+      return h('th.rcol', { title: round.courseName || ('Round ' + round.index) }, 'R' + round.index);
+    })).concat([
+      header('Total', 'points', st, onSort, '.total')
+    ]));
+
     var body = rows.map(function (r) {
+      var cells = [h('td.pos', {}, (r._tie ? '=' : '') + r._pos), nameCell(r)];
+      r.roundPts.forEach(function (rp) {
+        cells.push(h('td.rcol', {}, !rp ? '–' : (rp.pts == null ? '–' : (rp.pts + (rp.incomplete ? '*' : '')))));
+      });
+      cells.push(h('td.hi.total', {}, r.points == null ? '—' : r.points));
       return h('tr.lb-row' + (r.you ? '.you-row' : ''), {
         onclick: function () { GT.router.go('viewplayer', [r.id]); }
-      }, [
-        h('td.pos', {}, (r._tie ? '=' : '') + r._pos),
-        nameCell(r),
-        h('td', {}, GT.fmtHi(r.hi)),
-        h('td', {}, r.gross == null ? '—' : r.gross),
-        h('td', {}, r.net == null ? 'N/A' : r.net),
-        h('td.hi', {}, r.points == null ? '—' : r.points),
-        h('td', {}, r.rounds + '/' + rounds.length)
-      ]);
+      }, cells);
     });
     app.appendChild(h('div.card', { style: { overflowX: 'auto' } }, h('table.lb', {}, [h('thead', {}, [head]), h('tbody', {}, body)])));
     legend(app, 'overall');
@@ -396,6 +392,7 @@
       which === 'round' ? '👆 Tap any player to view their scorecard for this round.'
                         : '👆 Tap any player to view their rounds and scorecards.'));
     app.appendChild(h('div.muted', { style: { fontSize: '.78rem', marginTop: '8px' } },
-      '* incomplete round · S = summary entry · =n tied position · tap a column header to sort'));
+      (which === 'overall' ? 'R1–Rn = Stableford points per round · Total is the sum · ' : '') +
+      '* incomplete round · S = summary entry · =n tied position · tap Player or Total to sort'));
   }
 })(window.GT = window.GT || {});
