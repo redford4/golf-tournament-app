@@ -123,7 +123,37 @@
       h('button.btn.btn-primary', { onclick: function () { GT.router.go('leaderboard'); } }, '🏆 Leaderboards'),
       h('button.btn.btn-outline', { onclick: function () { GT.router.go('handicaps'); } }, '🎯 My Handicaps')
     ]));
+
+    var dinners = dinnerPlansSection(t);
+    if (dinners) app.appendChild(dinners);
   });
+
+  // Dinner Plans section for the tournament home (null if none set).
+  function dinnerPlansSection(t) {
+    var dinners = (t && t.dinners) || [];
+    if (!dinners.length) return null;
+    var byDate = {}, order = [];
+    dinners.forEach(function (d) { var k = d.date || 'zzzz'; if (!byDate[k]) { byDate[k] = []; order.push(k); } byDate[k].push(d); });
+    order.sort();
+    var wrap = h('div', {}, [h('h2.section-title', {}, '🍽 Dinner Plans')]);
+    order.forEach(function (k) {
+      var meals = byDate[k].slice().sort(function (a, b) { return (a.time || '').localeCompare(b.time || ''); });
+      var card = h('div.card');
+      if (k !== 'zzzz') card.appendChild(h('div', { style: { fontWeight: 700, marginBottom: '6px', color: 'var(--green-dark)' } }, GT.formatDate(k)));
+      meals.forEach(function (d) {
+        var href = (d.url && !/^https?:\/\//i.test(d.url)) ? 'https://' + d.url : d.url;
+        var restNode = href
+          ? h('a', { href: href, target: '_blank', rel: 'noopener noreferrer', style: { color: 'var(--blue)', fontWeight: 600 } }, d.restaurant + ' ↗')
+          : h('span', { style: { fontWeight: 600 } }, d.restaurant);
+        card.appendChild(h('div.dinner-row', {}, [
+          h('div.dinner-time', {}, d.time || '—'),
+          h('div.grow', {}, restNode)
+        ]));
+      });
+      wrap.appendChild(card);
+    });
+    return wrap;
+  }
 
   // ---- My Handicaps ----------------------------------------------------
   GT.router.register('handicaps', function (app) {

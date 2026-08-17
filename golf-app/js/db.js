@@ -51,6 +51,7 @@
       sessionHours: data.sessionHours || 4,
       theme: data.theme || 'green',
       photoUrl: data.photoUrl || '',
+      dinners: data.dinners || [], // [{ id, date, time, restaurant, url }]
       members: data.members || {}, // playerId -> { status:'member'|'blocked', joinedAt }
       createdAt: data.createdAt || Date.now(),
       updatedAt: Date.now()

@@ -55,6 +55,9 @@
 .tee-row .tee-time { font-weight: 800; color: var(--green-dark); min-width: 56px; }
 .tee-row.mine { background: var(--green-light); border-radius: 8px; padding: 8px; border-top: 0; }
 .tee-banner { margin-bottom: 12px; }
+.dinner-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
+.dinner-row:first-child { border-top: 0; }
+.dinner-time { font-weight: 700; color: var(--green-dark); min-width: 52px; }
 
 /* ---- Results / winner page ---- */
 .final-cta { background: linear-gradient(90deg, #f0a500, #ffd23f) !important; border: 0 !important; color: #4a3200 !important; font-weight: 800; box-shadow: 0 4px 14px rgba(240,165,0,.4); }

@@ -674,6 +674,66 @@
     }
   });
 
+  // ===== Dinner Plans ===================================================
+  GT.router.register('dinners', function (app) {
+    if (!requireAdmin(app)) return;
+    var t = db.getActiveTournament();
+    app.appendChild(h('h1.page-title', {}, 'Dinner Plans'));
+    app.appendChild(h('p.page-sub', {}, 'Add meals per day — restaurant, time and an optional website. Add several on the same day (e.g. lunch and evening). Players see these on the tournament home screen.'));
+
+    var entries = (t.dinners || []).map(function (d) {
+      return { id: d.id || db.uid('dinner'), date: d.date || '', time: d.time || '', restaurant: d.restaurant || '', url: d.url || '' };
+    });
+
+    var listWrap = h('div.stack');
+    function renderList() {
+      GT.clear(listWrap);
+      if (!entries.length) { listWrap.appendChild(GT.emptyState('🍽', 'No dinner plans yet', 'Tap “Add a meal” below.')); }
+      entries.forEach(function (e, idx) {
+        var date = h('input', { type: 'date', value: e.date });
+        var time = h('input', { type: 'time', value: e.time });
+        var rest = h('input', { type: 'text', value: e.restaurant, placeholder: 'e.g. The Ship Inn' });
+        var url = h('input', { type: 'url', inputmode: 'url', value: e.url, placeholder: 'https://…  (optional)', autocapitalize: 'off', spellcheck: 'false' });
+        date.addEventListener('change', function () { e.date = date.value; });
+        time.addEventListener('change', function () { e.time = time.value; });
+        rest.addEventListener('input', function () { e.restaurant = rest.value; });
+        url.addEventListener('input', function () { e.url = url.value; });
+        listWrap.appendChild(h('div.card.stack', {}, [
+          h('div.spread', {}, [
+            h('div', { style: { fontWeight: 600 } }, 'Meal ' + (idx + 1)),
+            h('button.btn.btn-ghost.btn-sm', { onclick: function () { entries.splice(idx, 1); renderList(); } }, '🗑 Remove')
+          ]),
+          h('div.grid2', {}, [
+            h('div.field', {}, [h('label', {}, 'Day'), date]),
+            h('div.field', {}, [h('label', {}, 'Time'), time])
+          ]),
+          h('div.field', {}, [h('label', {}, 'Restaurant'), rest]),
+          h('div.field', {}, [h('label', {}, 'Website (optional)'), url,
+            h('div.hint', {}, 'Leave blank if there’s no link. Players see it as a tappable link.')])
+        ]));
+      });
+    }
+    renderList();
+    app.appendChild(listWrap);
+
+    app.appendChild(h('button.btn.btn-outline.btn-block', {
+      onclick: function () { entries.push({ id: db.uid('dinner'), date: '', time: '', restaurant: '', url: '' }); renderList(); }
+    }, '+ Add a meal'));
+
+    function normUrl(u) { u = (u || '').trim(); if (!u) return ''; if (!/^https?:\/\//i.test(u)) u = 'https://' + u; return u; }
+    function save() {
+      var clean = entries.filter(function (e) { return (e.restaurant || '').trim(); }).map(function (e) {
+        return { id: e.id, date: e.date, time: e.time, restaurant: e.restaurant.trim(), url: normUrl(e.url) };
+      });
+      clean.sort(function (a, b) { return (a.date + 'T' + a.time).localeCompare(b.date + 'T' + b.time); });
+      db.updateTournament({ dinners: clean });
+      db.logAdmin('Updated dinner plans (' + clean.length + ' meal' + (clean.length === 1 ? '' : 's') + ')');
+      GT.toast('Dinner plans saved', 'success');
+      GT.router.go('admin');
+    }
+    app.appendChild(h('button.btn.btn-primary.btn-block', { style: { marginTop: '10px' }, onclick: save }, 'Save Dinner Plans'));
+  });
+
   // ===== Score management ===============================================
   GT.router.register('scores', function (app, params) {
     if (!requireAdmin(app)) return;

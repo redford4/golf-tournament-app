@@ -18,6 +18,7 @@
     { name: 'setup', icon: '⚙', label: 'Tournament Setup' },
     { name: 'courses', icon: '🗺', label: 'Course Configuration' },
     { name: 'groups', icon: '⛳', label: 'Groups & Tee Times' },
+    { name: 'dinners', icon: '🍽', label: 'Dinner Plans' },
     { name: 'members', icon: '👥', label: 'Member Management' },
     { name: 'scores', icon: '📝', label: 'Score Management' },
     { name: 'leaderboard', icon: '🏆', label: 'Leaderboards' }
