@@ -101,6 +101,29 @@
     return { rows: rows, rounds: rounds, lastRound: lastRound };
   };
 
+  // Derive a round's groups from the CURRENT standings in reverse order (worst
+  // players out first), for an auto reverse-leaderboard last day. Recomputed on
+  // every read, so it tracks the leaderboard as scores come in.
+  function toMin(s) { var m = /^(\d{1,2}):(\d{2})$/.exec(s || ''); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+  function toTime(n) { n = ((n % 1440) + 1440) % 1440; var hh = Math.floor(n / 60), mm = n % 60; return (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm; }
+  GT.reverseLeaderboardGroups = function (round) {
+    var t = db.getActiveTournament(); if (!t) return [];
+    var others = db.getRoundsFor(t.id).filter(function (r) { return r.configured && r.id !== round.id; });
+    var standing = db.getPlayers().map(function (p) {
+      var pts = 0;
+      others.forEach(function (r) { var res = util.result(r, p); if (res.hasScore && res.points != null) pts += res.points; });
+      return { id: p.id, pts: pts, name: GT.displayName(p) };
+    });
+    standing.sort(function (a, b) { return a.pts - b.pts || a.name.localeCompare(b.name); }); // worst first
+    var ids = standing.map(function (s) { return s.id; });
+    var sizes = GT.golf.groupSizes(ids.length, round.groupSize || 4);
+    var base = toMin(round.firstTee || '08:00'); if (base == null) base = 480;
+    var step = round.interval || 10;
+    var groups = [], k = 0;
+    sizes.forEach(function (s, i) { groups.push({ id: 'auto_' + round.id + '_' + i, players: ids.slice(k, k + s), teeTime: toTime(base + i * step) }); k += s; });
+    return groups;
+  };
+
   function medal(pos) { return pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : String(pos); }
 
   function confetti() {

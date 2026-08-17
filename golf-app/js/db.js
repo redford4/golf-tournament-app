@@ -314,7 +314,11 @@
   // ---- Tee groups (per round) ------------------------------------------
   function getGroups(roundId) {
     var r = getRound(roundId);
-    return (r && r.groups) || [];
+    if (!r) return [];
+    // A round set to auto reverse-leaderboard derives its groups live from the
+    // current standings (see GT.reverseLeaderboardGroups) instead of storing them.
+    if (r.autoReverse && GT.reverseLeaderboardGroups) return GT.reverseLeaderboardGroups(r);
+    return r.groups || [];
   }
   function saveGroups(roundId, groups) {
     return updateRound(roundId, { groups: groups });

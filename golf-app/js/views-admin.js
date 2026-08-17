@@ -489,190 +489,224 @@
   function timeToMin(s) { var m = /^(\d{1,2}):(\d{2})$/.exec(s || ''); return m ? (+m[1]) * 60 + (+m[2]) : null; }
   function minToTime(n) { n = ((n % 1440) + 1440) % 1440; var hh = Math.floor(n / 60), mm = n % 60; return (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm; }
 
+  function segRow(values, current, onset) {
+    var row = h('div.seg-row');
+    values.map(function (v) {
+      return h('button.seg' + (v.val === current() ? '.active' : ''), { type: 'button',
+        onclick: function () { onset(v.val); Array.prototype.forEach.call(row.children, function (c, i) { c.classList.toggle('active', values[i].val === current()); }); } }, v.label);
+    }).forEach(function (b) { row.appendChild(b); });
+    return row;
+  }
+  function describeSizes(sizes) {
+    if (!sizes.length) return '';
+    var counts = {};
+    sizes.forEach(function (s) { counts[s] = (counts[s] || 0) + 1; });
+    return Object.keys(counts).sort().map(function (s) { return counts[s] + ' × ' + s + '-ball'; }).join(', ');
+  }
+
   GT.router.register('groups', function (app, params) {
     if (!requireAdmin(app)) return;
     var t = db.getActiveTournament();
     var rounds = db.getRounds();
+    var members = db.getPlayers();
     var roundId = (params && params[0]) || (rounds[0] && rounds[0].id);
     var round = db.getRound(roundId);
 
     app.appendChild(h('h1.page-title', {}, 'Groups & Tee Times'));
+    if (!members.length) { app.appendChild(GT.emptyState('👥', 'No members yet', 'Players need to join before you can make groups.')); return; }
 
+    // ================= Tournament draw =================
+    var plan = t.groupPlan || {};
+    var drawSize = plan.size || 4;
+    var drawLast = plan.lastDay || 'random';
+    var drawFirst = h('input', { type: 'time', value: plan.firstTee || '08:00' });
+    var drawInterval = h('input', { type: 'number', min: '1', value: String(plan.interval || 10), style: { width: '90px' } });
+
+    function generateDraw() {
+      var ids = members.map(function (p) { return p.id; });
+      if (ids.length < 2) { GT.toast('Need at least 2 members.', 'error'); return; }
+      var size = drawSize;
+      var reverse = drawLast === 'reverse' && rounds.length > 1;
+      var firstTee = drawFirst.value || '08:00';
+      var step = parseInt(drawInterval.value, 10) || 10;
+      var base = timeToMin(firstTee); if (base == null) base = 480;
+      var randomRounds = reverse ? rounds.slice(0, -1) : rounds.slice();
+      var lastRound = reverse ? rounds[rounds.length - 1] : null;
+
+      // Optimise all random days together so the same players avoid each other
+      // across days as much as possible.
+      var schedule = GT.golf.makeSchedule(ids, size, randomRounds.length);
+      randomRounds.forEach(function (r, di) {
+        var arrays = schedule[di] || [];
+        var gobjs = arrays.map(function (g, i) { return { id: db.uid('grp'), players: g, teeTime: minToTime(base + i * step) }; });
+        db.updateRound(r.id, { groups: gobjs, autoReverse: false });
+      });
+      if (lastRound) {
+        db.updateRound(lastRound.id, { groups: [], autoReverse: true, groupSize: size, firstTee: firstTee, interval: step });
+      }
+      db.updateTournament({ groupPlan: { size: size, lastDay: reverse ? 'reverse' : 'random', firstTee: firstTee, interval: step } });
+      db.logAdmin('Generated tournament draw (' + (reverse ? 'reverse last day' : 'all random') + ')');
+      GT.toast('Draw generated for all rounds', 'success');
+      GT.router.render();
+    }
+
+    app.appendChild(h('div.card.stack', {}, [
+      h('div', { style: { fontWeight: 700 } }, '🎲 Tournament draw'),
+      h('div.field', {}, [h('label', {}, 'Group size'),
+        segRow([{ val: 4, label: '4-ball' }, { val: 3, label: '3-ball' }, { val: 2, label: '2-ball' }], function () { return drawSize; }, function (v) { drawSize = v; })]),
+      rounds.length > 1 ? h('div.field', {}, [h('label', {}, 'Last day'),
+        segRow([{ val: 'random', label: 'Also random' }, { val: 'reverse', label: 'Reverse leaderboard' }], function () { return drawLast; }, function (v) { drawLast = v; })]) : null,
+      h('div.grid2', {}, [
+        h('div.field', {}, [h('label', {}, 'First tee time'), drawFirst]),
+        h('div.field', {}, [h('label', {}, 'Interval (mins)'), drawInterval])
+      ]),
+      h('button.btn.btn-primary.btn-block', { onclick: function () {
+        if (rounds.some(function (r) { return db.getGroups(r.id).length; }))
+          GT.confirm('Generate a fresh draw for all rounds? This replaces any existing groups.', generateDraw, { yesLabel: 'Generate' });
+        else generateDraw();
+      } }, '🎲 Generate draw (all rounds)'),
+      h('div.hint', {}, members.length + ' members · ' + describeSizes(GT.golf.groupSizes(members.length, drawSize)) + ' each day' +
+        (rounds.length > 1 && drawLast === 'reverse' ? ' · last day auto-set by reverse leaderboard order (updates live)' : '') +
+        ' · players avoid repeat partners across days where possible.')
+    ]));
+
+    // ================= Per-round tabs =================
     var tabs = h('div.tabs');
     rounds.forEach(function (r) {
       tabs.appendChild(h('button' + (r.id === roundId ? '.active' : ''), {
         onclick: function () { GT.router.go('groups', [r.id]); }
-      }, 'R' + r.index));
+      }, 'R' + r.index + (r.autoReverse ? ' ⟲' : '')));
     });
     app.appendChild(tabs);
-
     if (!round) { app.appendChild(GT.emptyState('❓', 'No round')); return; }
-    var members = db.getPlayers();
-    if (!members.length) { app.appendChild(GT.emptyState('👥', 'No members yet', 'Players need to join before you can make groups.')); return; }
 
-    // ---- Generator controls ----
-    var size = 4, mode = 'random';
-    // Seed the First tee / Interval fields from the existing draw so they show
-    // the current times (and don't reset after an auto-save).
-    var seedG = db.getGroups(round.id);
-    var seedFirst = (seedG[0] && seedG[0].teeTime) || '08:00';
-    var seedInterval = 10;
-    if (seedG.length >= 2 && seedG[0].teeTime && seedG[1].teeTime) {
-      var d = timeToMin(seedG[1].teeTime) - timeToMin(seedG[0].teeTime);
-      if (d > 0) seedInterval = d;
+    var isLast = rounds.length > 1 && round.id === rounds[rounds.length - 1].id;
+
+    // ----- Auto reverse-leaderboard day (derived, read-only) -----
+    if (round.autoReverse) {
+      app.appendChild(h('div.note.note-blue', {}, [
+        h('div', { style: { fontWeight: 600, marginBottom: '2px' } }, '⟲ Auto — reverse leaderboard order'),
+        h('div', {}, 'Groups are set from the current standings (players with the worst scores tee off first) and update automatically as results come in. First tee ' + (round.firstTee || '08:00') + ', every ' + (round.interval || 10) + ' min.')
+      ]));
+      app.appendChild(groupsView(db.getGroups(round.id), members, null, null));
+      app.appendChild(h('button.btn.btn-outline.btn-block', { style: { marginTop: '10px' }, onclick: function () {
+        var frozen = db.getGroups(round.id).map(function (g) { return { id: db.uid('grp'), players: g.players.slice(), teeTime: g.teeTime }; });
+        db.updateRound(round.id, { autoReverse: false, groups: frozen });
+        GT.toast('Switched to manual — you can now edit this day.', 'success'); GT.router.render();
+      } }, 'Switch to manual editing'));
+      return;
     }
-    var firstTime = h('input', { type: 'time', value: seedFirst, onchange: function () { applyTeeTimes(true); } });
-    var interval = h('input', { type: 'number', min: '1', value: String(seedInterval), style: { width: '90px' }, onchange: function () { applyTeeTimes(true); } });
 
-    // Re-space every existing group's tee time from First tee + Interval, and save.
+    // ----- Manual / stored day (editable) -----
+    var seedG = db.getGroups(round.id);
+    var seedFirst = (seedG[0] && seedG[0].teeTime) || (round.firstTee || '08:00');
+    var seedInterval = round.interval || 10;
+    if (seedG.length >= 2 && seedG[0].teeTime && seedG[1].teeTime) {
+      var dd = timeToMin(seedG[1].teeTime) - timeToMin(seedG[0].teeTime); if (dd > 0) seedInterval = dd;
+    }
+    var rFirst = h('input', { type: 'time', value: seedFirst, onchange: function () { applyTeeTimes(true); } });
+    var rInterval = h('input', { type: 'number', min: '1', value: String(seedInterval), style: { width: '90px' }, onchange: function () { applyTeeTimes(true); } });
     function applyTeeTimes(announce) {
       var gs = db.getGroups(round.id);
-      if (!gs.length) return; // no groups yet — these fields apply on Generate
-      var base = timeToMin(firstTime.value); if (base == null) base = 8 * 60;
-      var step = parseInt(interval.value, 10) || 10;
-      var updated = gs.map(function (g, i) { return { id: g.id, players: g.players.slice(), teeTime: minToTime(base + i * step) }; });
-      db.saveGroups(round.id, updated);
+      if (!gs.length) return;
+      var base = timeToMin(rFirst.value); if (base == null) base = 480;
+      var step = parseInt(rInterval.value, 10) || 10;
+      db.saveGroups(round.id, gs.map(function (g, i) { return { id: g.id, players: g.players.slice(), teeTime: minToTime(base + i * step) }; }));
       if (announce) GT.toast('Tee times updated', 'success');
       GT.router.render();
     }
-
-    function segRow(values, current, onset) {
-      var row = h('div.seg-row');
-      var btns = values.map(function (v) {
-        return h('button.seg' + (v.val === current() ? '.active' : ''), { type: 'button',
-          onclick: function () { onset(v.val); Array.prototype.forEach.call(row.children, function (c, i) { c.classList.toggle('active', values[i].val === current()); }); } }, v.label);
-      });
-      btns.forEach(function (b) { row.appendChild(b); });
-      return row;
-    }
-
-    var controls = h('div.card.stack', {}, [
-      h('div.field', {}, [h('label', {}, 'Group size'),
-        segRow([{ val: 4, label: '4-ball' }, { val: 3, label: '3-ball' }, { val: 2, label: '2-ball' }], function () { return size; }, function (v) { size = v; })]),
-      h('div.field', {}, [h('label', {}, 'Method'),
-        segRow([{ val: 'random', label: 'Random (avoid repeats)' }, { val: 'ranking', label: 'Last day (reverse leaderboard)' }], function () { return mode; }, function (v) { mode = v; })]),
-      h('div.grid2', {}, [
-        h('div.field', {}, [h('label', {}, 'First tee time'), firstTime]),
-        h('div.field', {}, [h('label', {}, 'Interval (mins)'), interval])
-      ]),
-      h('div.hint', { style: { marginTop: '-4px' } }, 'Changing the first tee time or interval re-spaces every group’s tee time and saves automatically. You can also edit a single group’s time below.'),
-      h('div.btn-row', {}, [
-        h('button.btn.btn-primary', { onclick: generate }, '🎲 Generate groups'),
-        h('button.btn.btn-ghost', { onclick: clearGroups }, 'Clear')
-      ]),
-      h('div.hint', {}, members.length + ' members · ' + describeSizes(GT.golf.groupSizes(members.length, size)))
-    ]);
-    app.appendChild(controls);
-
-    function describeSizes(sizes) {
-      if (!sizes.length) return '';
-      var counts = {};
-      sizes.forEach(function (s) { counts[s] = (counts[s] || 0) + 1; });
-      return Object.keys(counts).sort().map(function (s) { return counts[s] + ' × ' + s + '-ball'; }).join(', ');
-    }
-
-    function rankingWorstFirst() {
-      // cumulative Stableford across configured rounds; fewest points = worst = first
-      var standing = members.map(function (p) {
-        var pts = 0, played = 0;
-        db.getRounds().forEach(function (r) {
-          if (!r.configured) return;
-          var res = util.result(r, p);
-          if (res.hasScore && res.points != null) { pts += res.points; played++; }
-        });
-        return { id: p.id, pts: pts, played: played };
-      });
-      standing.sort(function (a, b) { return a.pts - b.pts; }); // ascending = worst first
-      return standing.map(function (s) { return s.id; });
-    }
-
-    function generate() {
+    function redrawThisDay() {
       var ids = members.map(function (p) { return p.id; });
-      var opts = { mode: mode };
-      if (mode === 'ranking') opts.rankingWorstFirst = rankingWorstFirst();
-      else opts.pairCounts = db.pairCounts(t.id, round.id);
-      var arrays = GT.golf.makeGroups(ids, size, opts);
-      var base = timeToMin(firstTime.value); if (base == null) base = 8 * 60;
-      var step = parseInt(interval.value, 10) || 10;
-      var groups = arrays.map(function (ids2, i) {
-        return { id: db.uid('grp'), players: ids2, teeTime: minToTime(base + i * step) };
-      });
-      db.saveGroups(round.id, groups);
-      db.logAdmin('Generated ' + (mode === 'ranking' ? 'last-day' : 'random') + ' groups for R' + round.index);
-      GT.toast('Groups generated', 'success');
-      GT.router.render();
+      var arrays = GT.golf.makeGroups(ids, (t.groupPlan && t.groupPlan.size) || 4, { mode: 'random', pairCounts: db.pairCounts(t.id, round.id) });
+      var base = timeToMin(rFirst.value) || 480, step = parseInt(rInterval.value, 10) || 10;
+      db.saveGroups(round.id, arrays.map(function (g, i) { return { id: db.uid('grp'), players: g, teeTime: minToTime(base + i * step) }; }));
+      GT.toast('Round ' + round.index + ' redrawn', 'success'); GT.router.render();
     }
     function clearGroups() {
       if (!db.getGroups(round.id).length) return;
-      GT.confirm('Clear all groups for Round ' + round.index + '?', function () {
-        db.saveGroups(round.id, []); GT.toast('Groups cleared', 'success'); GT.router.render();
-      });
+      GT.confirm('Clear all groups for Round ' + round.index + '?', function () { db.saveGroups(round.id, []); GT.toast('Groups cleared', 'success'); GT.router.render(); });
     }
-
-    // ---- Current groups ----
-    var groups = db.getGroups(round.id);
-    var assigned = {};
-    groups.forEach(function (g) { (g.players || []).forEach(function (pid) { assigned[pid] = true; }); });
-    var unassigned = members.filter(function (p) { return !assigned[p.id]; });
-
-    function memberById(id) { return members.filter(function (p) { return p.id === id; })[0]; }
     function move(pid, fromIdx, toVal) {
       var gs = db.getGroups(round.id).map(function (g) { return { id: g.id, players: g.players.slice(), teeTime: g.teeTime }; });
       if (fromIdx != null) gs[fromIdx].players = gs[fromIdx].players.filter(function (x) { return x !== pid; });
       if (toVal !== 'x') gs[+toVal].players.push(pid);
-      gs = gs.filter(function (g) { return g.players.length; }); // drop emptied groups
-      db.saveGroups(round.id, gs); GT.router.render();
+      db.saveGroups(round.id, gs.filter(function (g) { return g.players.length; })); GT.router.render();
     }
     function setTee(idx, val) {
       var gs = db.getGroups(round.id).map(function (g) { return { id: g.id, players: g.players.slice(), teeTime: g.teeTime }; });
-      gs[idx].teeTime = val; db.saveGroups(round.id, gs);
-      GT.toast('Group ' + (idx + 1) + ' tee time saved', 'success');
+      gs[idx].teeTime = val; db.saveGroups(round.id, gs); GT.toast('Group ' + (idx + 1) + ' tee time saved', 'success');
     }
 
-    if (!groups.length) {
-      app.appendChild(GT.emptyState('⛳', 'No groups yet', 'Pick a size and method above, then Generate.'));
-    } else {
-      var list = h('div.stack');
-      groups.forEach(function (g, gi) {
-        var tee = h('input', { type: 'time', value: g.teeTime || '', style: { width: '120px' },
-          onchange: function () { setTee(gi, tee.value); } });
-        var players = (g.players || []).map(function (pid) {
-          var p = memberById(pid);
-          if (!p) return null;
-          var sel = h('select', { onchange: function () { move(pid, gi, sel.value); } },
-            groups.map(function (_, j) { return h('option', { value: String(j) }, 'Group ' + (j + 1)); })
-              .concat([h('option', { value: 'x' }, 'Remove')]));
-          sel.value = String(gi);
-          return h('div.grp-player', {}, [
-            h('div.grow', {}, [h('span', {}, GT.displayName(p)), h('span.muted', { style: { marginLeft: '6px' } }, 'HI ' + GT.fmtHi(p.handicapIndex))]),
-            sel
-          ]);
-        }).filter(Boolean);
-        list.appendChild(h('div.card', {}, [
-          h('div.spread', { style: { marginBottom: '8px' } }, [
-            h('h3', {}, 'Group ' + (gi + 1) + (gi === 0 ? ' (off first)' : '')),
-            h('div.card-row', {}, [h('span.muted', {}, '🕐'), tee])
-          ]),
-          h('div.stack', {}, players)
-        ]));
-      });
-      app.appendChild(list);
-    }
+    app.appendChild(h('div.card.stack', {}, [
+      h('div.grid2', {}, [
+        h('div.field', {}, [h('label', {}, 'First tee time'), rFirst]),
+        h('div.field', {}, [h('label', {}, 'Interval (mins)'), rInterval])
+      ]),
+      h('div.hint', { style: { marginTop: '-4px' } }, 'Editing the first tee time or interval re-spaces this day’s tee times automatically.'),
+      h('div.btn-row', {}, [
+        h('button.btn.btn-outline', { onclick: redrawThisDay }, '🎲 Redraw this day'),
+        h('button.btn.btn-ghost', { onclick: clearGroups }, 'Clear'),
+        isLast ? h('button.btn.btn-ghost', { onclick: function () {
+          db.updateRound(round.id, { autoReverse: true, groupSize: (t.groupPlan && t.groupPlan.size) || 4, firstTee: rFirst.value || '08:00', interval: parseInt(rInterval.value, 10) || 10 });
+          GT.toast('Last day set to auto reverse-leaderboard', 'success'); GT.router.render();
+        } }, '⟲ Auto reverse') : null
+      ])
+    ]));
 
-    if (unassigned.length) {
+    var groups = db.getGroups(round.id);
+    if (!groups.length) { app.appendChild(GT.emptyState('⛳', 'No groups for this day', 'Use the tournament draw above, or Redraw this day.')); }
+    else app.appendChild(groupsView(groups, members, move, setTee));
+
+    var assigned = {};
+    groups.forEach(function (g) { (g.players || []).forEach(function (pid) { assigned[pid] = true; }); });
+    var unassigned = members.filter(function (p) { return !assigned[p.id]; });
+    if (unassigned.length && groups.length) {
       var u = h('div.stack');
       unassigned.forEach(function (p) {
         var sel = h('select', { onchange: function () { if (sel.value !== '') move(p.id, null, sel.value); } },
           [h('option', { value: '' }, 'Add to…')].concat(groups.map(function (_, j) { return h('option', { value: String(j) }, 'Group ' + (j + 1)); })));
         u.appendChild(h('div.card.grp-player', {}, [
-          h('div.grow', {}, [h('span', {}, GT.displayName(p)), h('span.muted', { style: { marginLeft: '6px' } }, 'HI ' + GT.fmtHi(p.handicapIndex))]),
-          groups.length ? sel : h('span.badge.badge-grey', {}, 'generate first')
+          h('div.grow', {}, [h('span', {}, GT.displayName(p)), h('span.muted', { style: { marginLeft: '6px' } }, 'HI ' + GT.fmtHi(p.handicapIndex))]), sel
         ]));
       });
       app.appendChild(h('h2.section-title', {}, 'Unassigned (' + unassigned.length + ')'));
       app.appendChild(u);
     }
   });
+
+  // Render a set of groups. If move/setTee are provided, rows are editable;
+  // otherwise it's read-only (used for the auto reverse-leaderboard day).
+  function groupsView(groups, members, move, setTee) {
+    function memberById(id) { return members.filter(function (p) { return p.id === id; })[0]; }
+    var list = h('div.stack');
+    groups.forEach(function (g, gi) {
+      var teeNode = setTee
+        ? h('input', { type: 'time', value: g.teeTime || '', style: { width: '120px' }, onchange: function () { setTee(gi, teeNode.value); } })
+        : h('span', { style: { fontWeight: 700 } }, g.teeTime || '—');
+      var players = (g.players || []).map(function (pid) {
+        var p = memberById(pid); if (!p) return null;
+        var right = move
+          ? (function () {
+              var sel = h('select', { onchange: function () { move(pid, gi, sel.value); } },
+                groups.map(function (_, j) { return h('option', { value: String(j) }, 'Group ' + (j + 1)); }).concat([h('option', { value: 'x' }, 'Remove')]));
+              sel.value = String(gi); return sel;
+            })()
+          : null;
+        return h('div.grp-player', {}, [
+          h('div.grow', {}, [h('span', {}, GT.displayName(p)), h('span.muted', { style: { marginLeft: '6px' } }, 'HI ' + GT.fmtHi(p.handicapIndex))]),
+          right
+        ]);
+      }).filter(Boolean);
+      list.appendChild(h('div.card', {}, [
+        h('div.spread', { style: { marginBottom: '8px' } }, [
+          h('h3', {}, 'Group ' + (gi + 1) + (gi === 0 ? ' (off first)' : '')),
+          h('div.card-row', {}, [h('span.muted', {}, '🕐'), teeNode])
+        ]),
+        h('div.stack', {}, players)
+      ]));
+    });
+    return list;
+  }
 
   // ===== Dinner Plans ===================================================
   GT.router.register('dinners', function (app) {

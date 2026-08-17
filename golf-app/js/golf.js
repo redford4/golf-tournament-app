@@ -246,6 +246,56 @@
     return best || sliceBy(ids, sizes);
   }
 
+  /**
+   * Build a multi-day schedule (groups for each of `numDays` days) that
+   * minimises how often the same pair of players are grouped together across
+   * days. Uses randomised local search (hill-climbing with restarts). Returns
+   * an array of days, each an array of groups (arrays of ids), in play order.
+   */
+  function makeSchedule(ids, size, numDays, opts) {
+    opts = opts || {};
+    var sizes = groupSizes(ids.length, size);
+    function randomDay() { return sliceBy(shuffle(ids), sizes); }
+    function clone(days) { return days.map(function (gr) { return gr.map(function (g) { return g.slice(); }); }); }
+    // Cost = repeat incidences (a pair met n times contributes n·(n-1)/2); 0 = no repeats.
+    function cost(days) {
+      var pc = {}, c = 0;
+      for (var d = 0; d < days.length; d++) {
+        var gr = days[d];
+        for (var gi = 0; gi < gr.length; gi++) {
+          var g = gr[gi];
+          for (var a = 0; a < g.length; a++) for (var b = a + 1; b < g.length; b++) {
+            var k = pairKey(g[a], g[b]); var n = (pc[k] = (pc[k] || 0) + 1); if (n > 1) c += (n - 1);
+          }
+        }
+      }
+      return c;
+    }
+    var nowFn = (typeof performance !== 'undefined' && performance.now) ? function () { return performance.now(); } : function () { return Date.now(); };
+    var budget = opts.timeBudgetMs || 1000, iters = opts.iters || 3000;
+    var best = null, bestCost = Infinity, start = nowFn();
+    // Random restarts (as many as fit the time budget); within each, hill-climb
+    // by swapping two players between groups on the same day, keeping the best.
+    while (bestCost > 0 && nowFn() - start < budget) {
+      var days = [];
+      for (var d0 = 0; d0 < numDays; d0++) days.push(randomDay());
+      var cur = cost(days);
+      if (cur < bestCost) { bestCost = cur; best = clone(days); }
+      for (var it = 0; it < iters && cur > 0; it++) {
+        var day = days[(Math.random() * numDays) | 0];
+        if (day.length < 2) continue;
+        var gi2 = (Math.random() * day.length) | 0, gj2 = (Math.random() * day.length) | 0;
+        if (gi2 === gj2) continue;
+        var ai = (Math.random() * day[gi2].length) | 0, aj = (Math.random() * day[gj2].length) | 0;
+        var tmp = day[gi2][ai]; day[gi2][ai] = day[gj2][aj]; day[gj2][aj] = tmp; // swap
+        var nc = cost(days);
+        if (nc <= cur) { cur = nc; if (cur < bestCost) { bestCost = cur; best = clone(days); } } // accept improving/sideways
+        else { var t2 = day[gi2][ai]; day[gi2][ai] = day[gj2][aj]; day[gj2][aj] = t2; }           // revert
+      }
+    }
+    return best || [];
+  }
+
   GT.golf = {
     courseHandicap: courseHandicap,
     shotsReceived: shotsReceived,
@@ -258,6 +308,7 @@
     validatePar: validatePar,
     groupSizes: groupSizes,
     makeGroups: makeGroups,
+    makeSchedule: makeSchedule,
     pairKey: pairKey
   };
 })(window.GT = window.GT || {});
