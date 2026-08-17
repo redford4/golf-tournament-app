@@ -636,6 +636,17 @@
       var gs = db.getGroups(round.id).map(function (g) { return { id: g.id, players: g.players.slice(), teeTime: g.teeTime }; });
       gs[idx].teeTime = val; db.saveGroups(round.id, gs); GT.toast('Group ' + (idx + 1) + ' tee time saved', 'success');
     }
+    // Exchange two players between (or within) groups, keeping group sizes.
+    function swap(a, b) {
+      if (!a || !b || a === b) { GT.toast('Pick two different players.', 'error'); return; }
+      var gs = db.getGroups(round.id).map(function (g) { return { id: g.id, players: g.players.slice(), teeTime: g.teeTime }; });
+      var la = null, lb = null;
+      gs.forEach(function (g, gi) { g.players.forEach(function (pid, pi) { if (pid === a) la = { gi: gi, pi: pi }; if (pid === b) lb = { gi: gi, pi: pi }; }); });
+      if (!la || !lb) return;
+      gs[la.gi].players[la.pi] = b; gs[lb.gi].players[lb.pi] = a;
+      db.saveGroups(round.id, gs);
+      GT.toast('Players swapped', 'success'); GT.router.render();
+    }
 
     app.appendChild(h('div.card.stack', {}, [
       h('div.grid2', {}, [
@@ -655,7 +666,28 @@
 
     var groups = db.getGroups(round.id);
     if (!groups.length) { app.appendChild(GT.emptyState('⛳', 'No groups for this day', 'Use the tournament draw above, or Redraw this day.')); }
-    else app.appendChild(groupsView(groups, members, move, setTee));
+    else {
+      app.appendChild(groupsView(groups, members, move, setTee));
+
+      // Swap two players (keeps group sizes) — the usual manual tweak.
+      var assignedOpts = [];
+      groups.forEach(function (g, gi) {
+        (g.players || []).forEach(function (pid) {
+          var p = db.getPlayer(pid); if (p) assignedOpts.push({ id: pid, label: 'G' + (gi + 1) + ' · ' + GT.displayName(p) });
+        });
+      });
+      var selA = h('select', {}, [h('option', { value: '' }, 'Player…')].concat(assignedOpts.map(function (x) { return h('option', { value: x.id }, x.label); })));
+      var selB = h('select', {}, [h('option', { value: '' }, 'Player…')].concat(assignedOpts.map(function (x) { return h('option', { value: x.id }, x.label); })));
+      app.appendChild(h('div.card.stack', {}, [
+        h('div', { style: { fontWeight: 600 } }, '⇄ Swap two players'),
+        h('div.hint', { style: { marginTop: '-4px' } }, 'Exchange two players between groups, keeping group sizes. (To move a single player or drop them out, use the dropdown on each player above.)'),
+        h('div.grid2', {}, [
+          h('div.field', {}, [h('label', {}, 'Player A'), selA]),
+          h('div.field', {}, [h('label', {}, 'Player B'), selB])
+        ]),
+        h('button.btn.btn-outline.btn-block', { onclick: function () { swap(selA.value, selB.value); } }, '⇄ Swap')
+      ]));
+    }
 
     var assigned = {};
     groups.forEach(function (g) { (g.players || []).forEach(function (pid) { assigned[pid] = true; }); });
