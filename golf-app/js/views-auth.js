@@ -16,9 +16,9 @@
     return h('select', {}, ts.map(function (t) { return h('option', { value: t.id }, t.name); }));
   }
 
-  // ---- Landing ----------------------------------------------------------
+  // ---- Landing (players only: sign in + view leaderboard) ---------------
   GT.router.register('login', function (app) {
-    var mode = 'player'; // 'player' | 'org' | 'view'
+    var mode = 'player'; // 'player' | 'view'
     var panel = h('div.stack');
 
     function focusFirst() { setTimeout(function () { var i = panel.querySelector('input,select'); if (i) i.focus(); }, 40); }
@@ -27,19 +27,11 @@
       GT.clear(panel);
       panel.appendChild(h('div.tabs', {}, [
         h('button' + (mode === 'player' ? '.active' : ''), { onclick: function () { mode = 'player'; render(); } }, 'Player'),
-        h('button' + (mode === 'org' ? '.active' : ''), { onclick: function () { mode = 'org'; render(); } }, 'Organiser'),
-        h('button' + (mode === 'view' ? '.active' : ''), { onclick: function () { mode = 'view'; render(); } }, 'View')
+        h('button' + (mode === 'view' ? '.active' : ''), { onclick: function () { mode = 'view'; render(); } }, 'Leaderboard')
       ]));
 
       if (mode === 'player') renderPlayer();
-      else if (mode === 'org') renderOrg();
       else renderView();
-
-      if (!db.getTournaments().length) {
-        panel.appendChild(h('button.btn.btn-ghost.btn-sm', {
-          onclick: function () { var t = GT.seedDemo(); GT.state.setRole('admin'); GT.state.setTournament(t.id); GT.router.go('admin'); }
-        }, '✨ Load demo tournament'));
-      }
       focusFirst();
     }
 
@@ -68,29 +60,6 @@
       ]));
     }
 
-    function renderOrg() {
-      var ts = db.getTournaments();
-      var card = h('div.card.stack');
-      if (ts.length) {
-        var sel = tournamentSelect();
-        var code = h('input', { type: 'password', placeholder: 'Admin code', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false',
-          onkeydown: function (e) { if (e.key === 'Enter') signin(); } });
-        function signin() {
-          var t = db.getTournamentById(sel.value);
-          if (!t) { GT.toast('Pick a tournament.', 'error'); return; }
-          if (!t.adminCode || code.value.trim() !== t.adminCode) { GT.toast('Incorrect admin code for ' + t.name + '.', 'error'); code.value = ''; code.focus(); return; }
-          GT.state.setRole('admin'); GT.state.setTournament(t.id);
-          GT.toast('Managing ' + t.name, 'success'); GT.router.go('admin');
-        }
-        card.appendChild(h('div.field', {}, [h('label', {}, 'Manage a tournament'), sel]));
-        card.appendChild(h('div.field', {}, [h('label', {}, 'Admin code'), code]));
-        card.appendChild(h('button.btn.btn-primary.btn-block', { onclick: signin }, 'Sign in as Organiser'));
-        card.appendChild(h('hr.divider'));
-      }
-      card.appendChild(h('button.btn.btn-outline.btn-block', { onclick: function () { GT.router.go('createtournament'); } }, '+ Create a new tournament'));
-      panel.appendChild(card);
-    }
-
     function renderView() {
       var ts = db.getTournaments();
       if (!ts.length) { panel.appendChild(h('div.card', {}, h('div.empty', {}, [h('span.ic', {}, '🏆'), 'No tournaments yet.']))); return; }
@@ -110,6 +79,44 @@
       panel
     ]));
     render();
+  });
+
+  // ---- Organiser sign-in (separate URL: #/organiser) --------------------
+  GT.router.register('organiser', function (app) {
+    var ts = db.getTournaments();
+    var card = h('div.card.stack');
+
+    if (ts.length) {
+      var sel = tournamentSelect();
+      var code = h('input', { type: 'password', placeholder: 'Admin code', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false',
+        onkeydown: function (e) { if (e.key === 'Enter') signin(); } });
+      function signin() {
+        var t = db.getTournamentById(sel.value);
+        if (!t) { GT.toast('Pick a tournament.', 'error'); return; }
+        if (!t.adminCode || code.value.trim() !== t.adminCode) { GT.toast('Incorrect admin code for ' + t.name + '.', 'error'); code.value = ''; code.focus(); return; }
+        GT.state.setRole('admin'); GT.state.setTournament(t.id);
+        GT.toast('Managing ' + t.name, 'success'); GT.router.go('admin');
+      }
+      card.appendChild(h('div.field', {}, [h('label', {}, 'Manage a tournament'), sel]));
+      card.appendChild(h('div.field', {}, [h('label', {}, 'Admin code'), code]));
+      card.appendChild(h('button.btn.btn-primary.btn-block', { onclick: signin }, 'Sign in as Organiser'));
+      card.appendChild(h('hr.divider'));
+    }
+    card.appendChild(h('button.btn.btn-outline.btn-block', { onclick: function () { GT.router.go('createtournament'); } }, '+ Create a new tournament'));
+    if (!ts.length) {
+      card.appendChild(h('button.btn.btn-ghost.btn-sm', {
+        onclick: function () { var t = GT.seedDemo(); GT.state.setRole('admin'); GT.state.setTournament(t.id); GT.router.go('admin'); }
+      }, '✨ Load demo tournament'));
+    }
+
+    app.appendChild(h('div.login-wrap', {}, [
+      h('div.login-logo', {}, '🛠'),
+      h('h1', {}, 'Organiser'),
+      h('p.tag', {}, 'Sign in to manage a tournament'),
+      card,
+      h('button.btn.btn-ghost.btn-block', { style: { marginTop: '14px' }, onclick: function () { GT.router.go('login'); } }, '← Player / leaderboard')
+    ]));
+    setTimeout(function () { var i = card.querySelector('input,select'); if (i) i.focus(); }, 40);
   });
 
   // ---- Create a tournament (organiser) ---------------------------------

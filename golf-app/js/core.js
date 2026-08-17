@@ -214,7 +214,7 @@
     GT.db.setActiveTournament(state.tournamentId || null);
 
     // Auth gate: everything except these public routes requires a role
-    var PUBLIC = { login: 1, createtournament: 1 };
+    var PUBLIC = { login: 1, organiser: 1, createtournament: 1 };
     if (!PUBLIC[route.name] && !state.role) {
       go('login');
       return;

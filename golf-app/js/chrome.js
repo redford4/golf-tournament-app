@@ -86,7 +86,7 @@
     // Apply the active tournament's colour theme (default green when none).
     var at = GT.db.getActiveTournament();
     GT.applyTheme(at && at.theme);
-    var noChrome = !loggedIn || route.name === 'login' || route.name === 'register' || route.name === 'createtournament';
+    var noChrome = !loggedIn || route.name === 'login' || route.name === 'organiser' || route.name === 'register' || route.name === 'createtournament';
 
     if (noChrome) {
       appbar.hidden = true;
