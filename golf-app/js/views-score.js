@@ -190,7 +190,9 @@
               ? h('button.btn.btn-sm.btn-photo', { type: 'button', style: { marginLeft: '8px', minHeight: '28px', padding: '2px 8px' },
                   onclick: function () { GT.viewImage(round.holeImages[i], 'Hole ' + (i + 1)); } }, '📷 Hole')
               : null
-          ])
+          ].concat((GT.bonus ? GT.bonus.forHole(round, i) : []).map(function (b) {
+            return h('span.badge.bonus-badge', { title: b.type, style: { marginLeft: '6px' } }, GT.bonus.iconFor(b) + ' ' + b.type);
+          })))
         ]),
         resultNode
       ]));
@@ -247,6 +249,13 @@
           ? h('button.btn.btn-outline.btn-sm', { type: 'button', onclick: function () { commitInput(false); focusHole(i + 1); } }, 'Next hole →')
           : h('button.btn.btn-outline.btn-sm', { type: 'button', onclick: function () { commitInput(false); focusHole(n); } }, 'Finish →')
       ]));
+
+      // --- Bonus capture (longest drive, nearest the pin, …) on this hole ---
+      if (GT.bonus) {
+        GT.bonus.forHole(round, i).forEach(function (b) {
+          cardEl.appendChild(GT.bonus.captureCard(round, b));
+        });
+      }
     }
 
     for (var i = 0; i < n; i++) {

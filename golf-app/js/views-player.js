@@ -245,6 +245,9 @@
     // Par / SI reference table
     app.appendChild(scorecardReference(round, player));
 
+    // Bonus prizes for this round (longest drive, nearest the pin, …)
+    if (GT.bonus) { var bpanel = GT.bonus.panel(round); if (bpanel) app.appendChild(bpanel); }
+
     if (player) {
       var r = util.result(round, player);
       var actions = h('div.stack', { style: { marginTop: '6px' } });
@@ -307,7 +310,10 @@
       var holeCells = [], parCells = [], siCells = [];
       var th = [h('th.rowhead', {}, 'Hole')];
       for (var i = start; i < end; i++) {
-        th.push(h('th', {}, String(i + 1)));
+        var hb = GT.bonus ? GT.bonus.forHole(round, i) : [];
+        th.push(hb.length
+          ? h('th.has-bonus', { title: hb.map(function (b) { return b.type; }).join(', ') }, [String(i + 1), h('span.sc-bonus-mark', {}, '🏅')])
+          : h('th', {}, String(i + 1)));
         var shots = ch != null ? golf.shotsReceived(ch, Number(round.strokeIndex[i])) : 0;
         parCells.push(h('td', {}, round.par[i] != null ? String(round.par[i]) : '—'));
         siCells.push(h('td' + (shots ? '.shot' + (shots > 1 ? '.shot2' : '') : ''), {}, round.strokeIndex[i] != null ? String(round.strokeIndex[i]) : '—'));
@@ -324,8 +330,9 @@
         ])
       ]);
     }
+    var hasBonuses = GT.bonus && GT.bonus.forRound(round).length;
     var wrap = h('div.card', {}, [h('div.muted', { style: { marginBottom: '8px' } },
-      'Course layout' + (ch != null ? ' · ⬤ marks holes where you get a shot' : ''))]);
+      'Course layout' + (ch != null ? ' · ⬤ marks holes where you get a shot' : '') + (hasBonuses ? ' · 🏅 bonus hole' : ''))]);
     wrap.appendChild(h('div.sc-wrap', {}, block(0, Math.min(9, n))));
     if (n > 9) wrap.appendChild(h('div.sc-wrap', { style: { marginTop: '8px' } }, block(9, n)));
     return wrap;

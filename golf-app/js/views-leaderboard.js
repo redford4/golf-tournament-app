@@ -315,7 +315,12 @@
       };
     }).filter(function (r) { return r.hasScore; });
 
-    if (!rows.length) { app.appendChild(GT.emptyState('⛳', 'No scores yet for this round')); return; }
+    if (!rows.length) {
+      app.appendChild(GT.emptyState('⛳', 'No scores yet for this round'));
+      var rb0 = GT.bonus && GT.bonus.board([round], { title: 'Bonuses — Round ' + round.index });
+      if (rb0) app.appendChild(rb0);
+      return;
+    }
 
     var st = sortState.round;
     function onSort(key) { st.dir = (st.key === key) ? (st.dir === 'asc' ? 'desc' : 'asc') : defaultDir(key); st.key = key; GT.router.render(); }
@@ -346,6 +351,8 @@
       ]);
     });
     app.appendChild(h('div.card', { style: { overflowX: 'auto' } }, h('table.lb', {}, [h('thead', {}, [head]), h('tbody', {}, body)])));
+    var rb = GT.bonus && GT.bonus.board([round], { title: 'Bonuses — Round ' + round.index });
+    if (rb) app.appendChild(rb);
     legend(app, 'round');
   }
 
@@ -371,7 +378,12 @@
       };
     }).filter(function (r) { return r.hasScore; });
 
-    if (!rows.length) { app.appendChild(GT.emptyState('🏆', 'No scores in yet')); return; }
+    if (!rows.length) {
+      app.appendChild(GT.emptyState('🏆', 'No scores in yet'));
+      var ob0 = GT.bonus && GT.bonus.board(rounds, { title: 'Bonuses', showRound: true });
+      if (ob0) app.appendChild(ob0);
+      return;
+    }
 
     var st = sortState.overall;
     function onSort(key) { st.dir = (st.key === key) ? (st.dir === 'asc' ? 'desc' : 'asc') : defaultDir(key); st.key = key; GT.router.render(); }
@@ -399,6 +411,8 @@
       }, cells);
     });
     app.appendChild(h('div.card', { style: { overflowX: 'auto' } }, h('table.lb', {}, [h('thead', {}, [head]), h('tbody', {}, body)])));
+    var ob = GT.bonus && GT.bonus.board(rounds, { title: 'Bonuses', showRound: true });
+    if (ob) app.appendChild(ob);
     legend(app, 'overall');
   }
 

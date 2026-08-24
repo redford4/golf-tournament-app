@@ -73,6 +73,7 @@
       mapUrl: '',                       // course layout map (Storage URL)
       holeImages: new Array(18).fill(null), // per-hole photo Storage URLs
       groups: [], // [{ id, players:[playerId], teeTime:'HH:MM' }] in play order
+      bonuses: [], // [{ id, hole:1-based, type, icon, dir:'high'|'low', unit, winnerId, value, updatedAt, updatedBy }]
       configured: false
     };
   }
@@ -349,6 +350,49 @@
     return null;
   }
 
+  // ---- Bonus prizes (per round: longest drive, nearest the pin, …) -----
+  function getBonuses(roundId) {
+    var r = getRound(roundId);
+    return (r && r.bonuses) ? r.bonuses : [];
+  }
+  function saveBonuses(roundId, bonuses) {
+    return updateRound(roundId, { bonuses: bonuses });
+  }
+  function addBonus(roundId, data) {
+    var r = getRound(roundId);
+    if (!r) return null;
+    var list = (r.bonuses || []).slice();
+    var b = {
+      id: uid('bonus'), hole: data.hole, type: data.type,
+      icon: data.icon || '', dir: data.dir || 'high', unit: data.unit || '',
+      winnerId: null, value: null, updatedAt: null, updatedBy: null
+    };
+    list.push(b);
+    updateRound(roundId, { bonuses: list });
+    return b;
+  }
+  function removeBonus(roundId, bonusId) {
+    var r = getRound(roundId);
+    if (!r) return null;
+    var list = (r.bonuses || []).filter(function (b) { return b.id !== bonusId; });
+    return updateRound(roundId, { bonuses: list });
+  }
+  /** Set (or clear) the current holder of a bonus. patch = {winnerId, value, byId}. */
+  function setBonusWinner(roundId, bonusId, patch) {
+    var r = getRound(roundId);
+    if (!r) return null;
+    var list = (r.bonuses || []).map(function (b) {
+      if (b.id !== bonusId) return b;
+      return Object.assign({}, b, {
+        winnerId: patch.winnerId || null,
+        value: (patch.value === '' || patch.value == null) ? null : Number(patch.value),
+        updatedAt: Date.now(),
+        updatedBy: patch.byId || null
+      });
+    });
+    return updateRound(roundId, { bonuses: list });
+  }
+
   // ---- Players (GLOBAL accounts) ---------------------------------------
   function getAllPlayers() { return load().players; }
   function getPlayer(id) {
@@ -541,6 +585,8 @@
     getRounds: getRounds, getRoundsFor: getRoundsFor, getRound: getRound, updateRound: updateRound, ensureRoundsFor: ensureRoundsFor,
     // tee groups
     getGroups: getGroups, saveGroups: saveGroups, pairCounts: pairCounts, playerGroup: playerGroup,
+    // bonus prizes
+    getBonuses: getBonuses, saveBonuses: saveBonuses, addBonus: addBonus, removeBonus: removeBonus, setBonusWinner: setBonusWinner,
     // players (global)
     getAllPlayers: getAllPlayers, getPlayer: getPlayer, addPlayer: addPlayer, updatePlayer: updatePlayer, removePlayer: removePlayer,
     findDuplicateCdh: findDuplicateCdh, findPlayerByUsername: findPlayerByUsername, findDuplicateUsername: findDuplicateUsername,

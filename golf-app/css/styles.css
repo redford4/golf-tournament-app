@@ -338,3 +338,31 @@ table.lb td.total { font-weight: 800; color: var(--green-dark); }
   .modal-overlay { align-items: center; }
   .modal { border-radius: 16px; }
 }
+
+/* ---- Bonus prizes (longest drive, nearest the pin, …) ---------------- */
+.bonus-badge { background: var(--amber-bg); color: var(--amber); font-size: .72rem; font-weight: 700;
+  padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+.sc-bonus-mark { font-size: .7em; margin-left: 1px; }
+.sc .has-bonus { color: var(--amber); }
+
+.bonus-card { border-left: 3px solid var(--amber); margin-top: 10px; }
+.bonus-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.bonus-title { font-weight: 700; color: var(--green-dark); }
+.bonus-hole { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+.bonus-holder { margin-top: 6px; display: flex; align-items: baseline; gap: 8px; }
+.bonus-holder.none { margin-top: 4px; }
+.bonus-who { font-weight: 700; }
+.bonus-val { font-size: .82rem; color: var(--muted); }
+.bonus-edit { margin-top: 8px; }
+.bonus-edit .field { margin-bottom: 8px; }
+.bonus-edit select, .bonus-edit input { width: 100%; }
+
+.bonus-panel { margin-top: 6px; }
+.bonus-board { margin-top: 12px; }
+.bonus-board-title { font-weight: 700; color: var(--green-dark); margin-bottom: 8px; }
+.bonus-line { display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 7px 0; border-top: 1px solid var(--line); }
+.bonus-line:first-of-type { border-top: none; }
+.bonus-line-what { font-size: .9rem; }
+.bonus-line-hole { color: var(--muted); font-size: .82rem; }
+.bonus-line-who { text-align: right; white-space: nowrap; }

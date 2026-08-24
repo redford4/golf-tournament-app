@@ -396,6 +396,88 @@
       h('div.hint', { style: { marginTop: '8px' } }, 'Stroke Index must be a complete 1–' + n + ' set with no duplicates. Yardage is optional.')
     ]));
 
+    // --- Bonus prizes (longest drive, nearest the pin, …) — saved instantly ---
+    var bonusWrap = h('div.card');
+    function renderBonuses() {
+      GT.clear(bonusWrap);
+      var hn = parseInt(meta.numHoles.value, 10) || 18;
+      bonusWrap.appendChild(h('div.spread', { style: { marginBottom: '4px' } }, [
+        h('div', { style: { fontWeight: 600 } }, '🏅 Bonus prizes'),
+        h('span.badge.badge-amber', {}, 'Saved instantly')
+      ]));
+      bonusWrap.appendChild(h('div.hint', { style: { marginBottom: '10px' } },
+        'Pick the hole and prize (e.g. Longest Drive, Nearest the Pin). Players see a marker on that hole and record the winner as they play.'));
+
+      var list = GT.bonus.forRound(round);
+      if (list.length) {
+        var listWrap = h('div.stack', { style: { marginBottom: '12px' } });
+        list.forEach(function (b) {
+          listWrap.appendChild(h('div.card-row', { style: { alignItems: 'center' } }, [
+            h('div.grow', {}, [
+              h('div', { style: { fontWeight: 600 } }, GT.bonus.iconFor(b) + ' ' + b.type),
+              h('div.muted', { style: { fontSize: '.82rem' } }, 'Hole ' + b.hole + ' · ' + (b.dir === 'low' ? 'closest wins' : 'longest wins'))
+            ]),
+            h('button.btn.btn-ghost.btn-sm', { onclick: function () {
+              db.removeBonus(round.id, b.id); renderBonuses();
+            } }, 'Remove')
+          ]));
+        });
+        bonusWrap.appendChild(listWrap);
+      } else {
+        bonusWrap.appendChild(h('div.muted', { style: { marginBottom: '12px', fontSize: '.85rem' } }, 'No bonus prizes yet.'));
+      }
+
+      // Add form
+      var holeSel = h('select', {}, (function () {
+        var opts = [];
+        for (var i = 1; i <= hn; i++) opts.push(h('option', { value: String(i) }, 'Hole ' + i));
+        return opts;
+      })());
+      var typeSel = h('select', {}, GT.bonus.PRESETS.map(function (p) {
+        return h('option', { value: p.type }, p.icon + ' ' + p.type);
+      }).concat([h('option', { value: '__custom' }, '✏️ Custom…')]));
+      var customName = h('input', { type: 'text', placeholder: 'Prize name, e.g. Longest Putt' });
+      var dirSel = h('select', {}, [
+        h('option', { value: 'high' }, 'Longest / biggest wins'),
+        h('option', { value: 'low' }, 'Closest / smallest wins')
+      ]);
+      var customRow = h('div.grid2', { style: { display: 'none', marginTop: '8px' } }, [
+        h('div.field', {}, [h('label', {}, 'Custom prize name'), customName]),
+        h('div.field', {}, [h('label', {}, 'How it’s won'), dirSel])
+      ]);
+      typeSel.addEventListener('change', function () {
+        customRow.style.display = typeSel.value === '__custom' ? '' : 'none';
+      });
+
+      var addBtn = h('button.btn.btn-primary.btn-sm', { onclick: function () {
+        var hole = parseInt(holeSel.value, 10);
+        var data;
+        if (typeSel.value === '__custom') {
+          var nm = customName.value.trim();
+          if (!nm) { GT.toast('Enter a name for the custom prize.', 'error'); return; }
+          data = { hole: hole, type: nm, icon: '🏅', dir: dirSel.value, unit: '' };
+        } else {
+          var preset = GT.bonus.presetFor(typeSel.value);
+          data = { hole: hole, type: preset.type, icon: preset.icon, dir: preset.dir, unit: preset.unit };
+        }
+        db.addBonus(round.id, data);
+        customName.value = ''; typeSel.value = GT.bonus.PRESETS[0].type; customRow.style.display = 'none';
+        renderBonuses();
+        GT.toast('Bonus added', 'success');
+      } }, '+ Add bonus');
+
+      bonusWrap.appendChild(h('div.note.note-blue', {}, [
+        h('div.grid2', {}, [
+          h('div.field', {}, [h('label', {}, 'Hole'), holeSel]),
+          h('div.field', {}, [h('label', {}, 'Prize'), typeSel])
+        ]),
+        customRow,
+        h('div', { style: { marginTop: '8px' } }, addBtn)
+      ]));
+    }
+    renderBonuses();
+    app.appendChild(bonusWrap);
+
     function fillStandardPar() {
       var std = [4,4,4,3,4,5,4,3,5, 4,4,3,4,5,4,4,3,5]; // a common par-72 layout
       var holesN = parseInt(meta.numHoles.value, 10);
