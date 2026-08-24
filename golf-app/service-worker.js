@@ -1,7 +1,7 @@
 /* Simple offline cache. Only active when the app is served over http(s). */
-var CACHE = 'golf-scoring-v2';
+var CACHE = 'golf-scoring-v3';
 var ASSETS = [
-  'index.html', 'css/styles.css',
+  'index.html', 'css/styles.css', 'img/login-bg.jpg',
   'js/config.js', 'js/golf.js', 'js/db.js', 'js/core.js', 'js/cloud.js', 'js/chrome.js',
   'js/views-auth.js', 'js/bonus.js', 'js/views-player.js', 'js/views-score.js',
   'js/views-admin.js', 'js/views-leaderboard.js', 'js/app.js',

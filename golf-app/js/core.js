@@ -220,6 +220,7 @@
       return;
     }
     var fn = routes[route.name] || routes['notfound'];
+    document.body.setAttribute('data-route', route.name); // lets CSS style per screen (e.g. sign-in backdrop)
     var app = document.getElementById('view');
     var navigated = location.hash !== lastRenderHash;
     lastRenderHash = location.hash;
