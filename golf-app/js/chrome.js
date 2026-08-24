@@ -75,6 +75,13 @@
     var psec = h('div.drawer-section', {}, [h('div.label', {}, 'Play')]);
     PLAYER_NAV.forEach(function (item) { psec.appendChild(navLink(item, activeName)); });
     drawer.appendChild(psec);
+    // A player granted organiser rights on this tournament also gets the
+    // organiser menu (they keep their player nav above).
+    if (GT.state.canOrganise()) {
+      var osec = h('div.drawer-section', {}, [h('div.label', {}, 'Organiser')]);
+      ADMIN_NAV.forEach(function (item) { osec.appendChild(navLink(item, activeName)); });
+      drawer.appendChild(osec);
+    }
     drawer.appendChild(h('div.drawer-section', {}, [
       h('button.drawer-link', { onclick: function () { closeDrawer(); GT.router.go('tournaments'); } }, [h('span.ic', {}, '🔁'), 'Switch tournament']),
       h('button.drawer-link', { onclick: function () { closeDrawer(); GT.state.logout(); } }, [h('span.ic', {}, '⏻'), 'Sign out'])

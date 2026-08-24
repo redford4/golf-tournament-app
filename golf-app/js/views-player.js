@@ -92,6 +92,11 @@
       ]));
     }
 
+    if (player && GT.state.canOrganise()) {
+      app.appendChild(h('button.btn.btn-outline.btn-block', { style: { marginBottom: '4px' },
+        onclick: function () { GT.router.go('admin'); } }, '🛠 Organiser tools'));
+    }
+
     if (GT.tournamentComplete && GT.tournamentComplete()) {
       app.appendChild(h('button.btn.btn-block.final-cta', {
         onclick: function () { GT.router.go('results'); } }, '🏆 Tournament complete — see the winner!'));

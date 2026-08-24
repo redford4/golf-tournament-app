@@ -473,13 +473,18 @@
     var m = getMembership(tid, pid);
     return !!(m && m.status === 'blocked');
   }
-  /** Members of a tournament as [{player, status, joinedAt}] (existing accounts). */
+  /** A member who has also been granted organiser rights for this tournament. */
+  function isOrganiser(tid, pid) {
+    var m = getMembership(tid, pid);
+    return !!(m && m.status === 'member' && m.organiser);
+  }
+  /** Members of a tournament as [{player, status, joinedAt, organiser}] (existing accounts). */
   function getMembers(tid) {
     var t = getTournamentById(tid);
     if (!t || !t.members) return [];
     return Object.keys(t.members).map(function (pid) {
-      var p = getPlayer(pid);
-      return p ? { player: p, status: t.members[pid].status, joinedAt: t.members[pid].joinedAt } : null;
+      var p = getPlayer(pid), m = t.members[pid];
+      return p ? { player: p, status: m.status, joinedAt: m.joinedAt, organiser: !!m.organiser } : null;
     }).filter(Boolean);
   }
   /** Players (member status) of the ACTIVE tournament — used by scoring/leaderboards. */
@@ -496,7 +501,19 @@
     if (!t) return;
     t.members = t.members || {};
     if (status == null) delete t.members[pid];
-    else t.members[pid] = { status: status, joinedAt: (t.members[pid] && t.members[pid].joinedAt) || Date.now() };
+    else {
+      var prev = t.members[pid] || {};
+      t.members[pid] = { status: status, joinedAt: prev.joinedAt || Date.now(), organiser: prev.organiser || false };
+    }
+    t.updatedAt = Date.now();
+    save();
+    pushTournament(t);
+  }
+  /** Grant or revoke organiser rights for an existing member. */
+  function setMemberOrganiser(tid, pid, on) {
+    var t = getTournamentById(tid);
+    if (!t || !t.members || !t.members[pid]) return;
+    t.members[pid].organiser = !!on;
     t.updatedAt = Date.now();
     save();
     pushTournament(t);
@@ -591,8 +608,8 @@
     getAllPlayers: getAllPlayers, getPlayer: getPlayer, addPlayer: addPlayer, updatePlayer: updatePlayer, removePlayer: removePlayer,
     findDuplicateCdh: findDuplicateCdh, findPlayerByUsername: findPlayerByUsername, findDuplicateUsername: findDuplicateUsername,
     // membership
-    getMembership: getMembership, isMember: isMember, isBlocked: isBlocked, getMembers: getMembers, getPlayers: getPlayers,
-    setMemberStatus: setMemberStatus, addMember: addMember, removeMember: removeMember, blockMember: blockMember,
+    getMembership: getMembership, isMember: isMember, isBlocked: isBlocked, isOrganiser: isOrganiser, getMembers: getMembers, getPlayers: getPlayers,
+    setMemberStatus: setMemberStatus, setMemberOrganiser: setMemberOrganiser, addMember: addMember, removeMember: removeMember, blockMember: blockMember,
     joinTournamentByCode: joinTournamentByCode, getPlayerTournaments: getPlayerTournaments,
     // scores
     getScore: getScore, blankScore: blankScore, saveScore: saveScore, deleteScore: deleteScore,

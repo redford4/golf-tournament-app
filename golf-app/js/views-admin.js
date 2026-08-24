@@ -8,7 +8,7 @@
   var h = GT.h, db = GT.db, golf = GT.golf, util = GT.util;
 
   function requireAdmin(app) {
-    if (!GT.state.isAdmin()) { GT.router.go('home'); return false; }
+    if (!GT.state.canOrganise()) { GT.router.go('home'); return false; }
     return true;
   }
 
@@ -497,7 +497,8 @@
     if (!requireAdmin(app)) return;
     var t = db.getTournament();
     app.appendChild(h('h1.page-title', {}, 'Member Management'));
-    app.appendChild(h('div.note.note-green', {}, ['Players join this tournament from their own list after signing in — no code needed. You can remove or block anyone here, or add an existing account below.']));
+    app.appendChild(h('div.note.note-green', {}, ['Players join this tournament from their own list after signing in — no code needed. You can remove or block anyone here, or add an existing account below. ',
+      h('b', {}, 'Make organiser'), ' lets a member manage this tournament too — they’ll get an Organiser button when they sign in, no admin code needed.']));
 
     var members = db.getMembers(t.id).sort(function (a, b) { return a.player.fullName.localeCompare(b.player.fullName); });
     if (!members.length) {
@@ -511,17 +512,30 @@
       list.appendChild(h('div.card.card-row', {}, [
         h('div.grow', {}, [h('h3', {}, GT.formalName(p)),
           h('div.muted', {}, 'HI ' + GT.fmtHi(p.handicapIndex) + (p.username ? ' · @' + p.username : '')),
-          blocked ? h('span.badge.badge-red', { style: { marginTop: '4px' } }, 'Blocked') : null]),
+          h('div.wrap', { style: { marginTop: '4px' } }, [
+            blocked ? h('span.badge.badge-red', {}, 'Blocked') : null,
+            m.organiser ? h('span.badge.badge-amber', {}, '🛠 Organiser') : null
+          ])]),
         h('div.wrap', {}, [
           h('button.btn.btn-outline.btn-sm', { onclick: function () { editPlayer(p); } }, 'Edit'),
           blocked
             ? h('button.btn.btn-outline.btn-sm', { onclick: function () { setStatus(p, 'member', 'unblocked'); } }, 'Unblock')
             : h('button.btn.btn-ghost.btn-sm', { onclick: function () { confirmBlock(p); } }, 'Block'),
+          blocked ? null : (m.organiser
+            ? h('button.btn.btn-ghost.btn-sm', { onclick: function () { setOrganiser(p, false); } }, 'Revoke organiser')
+            : h('button.btn.btn-ghost.btn-sm', { onclick: function () { setOrganiser(p, true); } }, 'Make organiser')),
           h('button.btn.btn-ghost.btn-sm', { onclick: function () { confirmRemove(p); } }, 'Remove')
         ])
       ]));
     });
     app.appendChild(list);
+
+    function setOrganiser(p, on) {
+      db.setMemberOrganiser(t.id, p.id, on);
+      db.logAdmin((on ? 'Granted' : 'Revoked') + ' organiser rights: ' + p.fullName);
+      GT.toast(p.fullName + (on ? ' is now an organiser' : ' is no longer an organiser'), 'success');
+      GT.router.render();
+    }
 
     app.appendChild(h('div.btn-row', { style: { marginTop: '6px' } }, [
       h('button.btn.btn-primary', { onclick: function () { addExisting(); } }, '+ Add existing player'),

@@ -145,14 +145,15 @@
   GT.router.register('results', function (app) {
     var t = db.getActiveTournament();
     if (!t) { GT.router.go('login'); return; }
+    var canOrg = GT.state.canOrganise();
     var back = h('button.btn.btn-outline.btn-block', { style: { marginTop: '14px' },
       onclick: function () {
-        if (GT.state.isAdmin()) GT.router.go('admin');
+        if (canOrg) GT.router.go('admin');
         else GT.router.go('leaderboard', [], { view: 'overall' });
-      } }, GT.state.isAdmin() ? '← Back to dashboard' : '← Back to leaderboard');
+      } }, canOrg ? '← Back to dashboard' : '← Back to leaderboard');
 
     var complete = GT.tournamentComplete();
-    var isAdmin = GT.state.isAdmin();
+    var isAdmin = canOrg;
 
     // Not finished: players see a "come back later" note; the organiser gets a
     // provisional preview of how the podium looks so far.

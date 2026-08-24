@@ -173,6 +173,14 @@
   function isAdmin() { return state.role === 'admin'; }
   function isViewer() { return state.role === 'viewer'; }
   function currentPlayer() { return state.playerId ? GT.db.getPlayer(state.playerId) : null; }
+  // True when the session may reach organiser screens: either signed in via the
+  // admin code (role 'admin'), or a signed-in player granted organiser rights on
+  // the active tournament. Lets a member be both a player and an organiser.
+  function canOrganise() {
+    if (isAdmin()) return true;
+    var tid = state.tournamentId;
+    return !!(state.playerId && tid && GT.db.isOrganiser(tid, state.playerId));
+  }
 
   // ---- Router (hash based) ---------------------------------------------
   var routes = {};
@@ -347,7 +355,7 @@
   GT.state = {
     get: function () { return state; },
     load: loadSession, save: saveSession, setRole: setRole, setPlayer: setPlayer,
-    setTournament: setTournament, logout: logout, isAdmin: isAdmin, isViewer: isViewer,
+    setTournament: setTournament, logout: logout, isAdmin: isAdmin, isViewer: isViewer, canOrganise: canOrganise,
     currentPlayer: currentPlayer
   };
   GT.router = { register: register, go: go, render: render, parseHash: parseHash };
