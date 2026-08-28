@@ -126,6 +126,23 @@
 
   function medal(pos) { return pos === 1 ? '🥇' : pos === 2 ? '🥈' : pos === 3 ? '🥉' : String(pos); }
 
+  // Count GROSS birdies (1 under par) and eagles-or-better (2+ under par) from a
+  // player's hole-by-hole record. Summary (mode B) rounds have no per-hole data.
+  function grossBE(round, rec) {
+    var out = { birdies: 0, eagles: 0 };
+    if (!rec || rec.mode === 'B' || !rec.holes) return out;
+    var n = round.numHoles || 18;
+    for (var i = 0; i < n; i++) {
+      var g = rec.holes[i];
+      if (g == null || g === 'NR' || g === 0) continue; // blank or no-return
+      var par = Number(round.par[i]); if (!par) continue;
+      var diff = par - Number(g);
+      if (diff === 1) out.birdies++;
+      else if (diff >= 2) out.eagles++;
+    }
+    return out;
+  }
+
   function confetti() {
     var wrap = h('div.confetti', { 'aria-hidden': 'true' });
     var colors = ['#ffd23f', '#0b6e4f', '#1b6ca8', '#e0533d', '#8e44ad', '#ff8fab'];
@@ -304,17 +321,20 @@
     var me = GT.state.currentPlayer();
     var rows = db.getPlayers().map(function (p) {
       var res = util.result(round, p);
+      var be = grossBE(round, res.record);
       return {
         id: p.id, name: GT.displayName(p), you: me && me.id === p.id,
         hi: p.handicapIndex, ch: res.courseHcp,
         gross: res.hasScore ? res.gross : null,
         net: res.net,
         points: res.hasScore ? res.points : null,
+        birdies: be.birdies, eagles: be.eagles,
         incomplete: res.hasScore && !res.complete,
         modeB: res.mode === 'B',
         hasScore: res.hasScore
       };
     }).filter(function (r) { return r.hasScore; });
+    var showEagles = rows.some(function (r) { return r.eagles > 0; });
 
     if (!rows.length) {
       app.appendChild(GT.emptyState('⛳', 'No scores yet for this round'));
@@ -336,7 +356,9 @@
       header('CH', 'ch', st, onSort),
       header('Gross', 'gross', st, onSort),
       header('Net', 'net', st, onSort),
-      header('Points', 'points', st, onSort)
+      header('Points', 'points', st, onSort),
+      header('Birdies', 'birdies', st, onSort),
+      showEagles ? header('Eagles', 'eagles', st, onSort) : null
     ]);
     var body = rows.map(function (r) {
       return h('tr.lb-row' + (r.you ? '.you-row' : ''), {
@@ -348,7 +370,9 @@
         h('td', {}, r.ch == null ? '—' : r.ch),
         h('td', {}, r.gross == null ? '—' : r.gross),
         h('td', {}, r.net == null ? 'N/A' : r.net),
-        h('td.hi', {}, r.points == null ? '—' : r.points)
+        h('td.hi', {}, r.points == null ? '—' : r.points),
+        h('td', {}, r.modeB ? '–' : r.birdies),
+        showEagles ? h('td', {}, r.modeB ? '–' : r.eagles) : null
       ]);
     });
     app.appendChild(h('div.card', { style: { overflowX: 'auto' } }, h('table.lb', {}, [h('thead', {}, [head]), h('tbody', {}, body)])));
@@ -361,7 +385,7 @@
   function renderOverall(app, rounds) {
     var me = GT.state.currentPlayer();
     var rows = db.getPlayers().map(function (p) {
-      var points = 0, played = 0, anyScore = false, allComplete = true, anyB = false;
+      var points = 0, played = 0, anyScore = false, allComplete = true, anyB = false, birdies = 0, eagles = 0;
       var roundPts = rounds.map(function (round) {
         var res = util.result(round, p);
         if (!res.hasScore) { allComplete = false; return null; }
@@ -369,15 +393,18 @@
         if (res.points != null) points += res.points;
         if (!res.complete) allComplete = false;
         if (res.mode === 'B') anyB = true;
+        var be = grossBE(round, res.record); birdies += be.birdies; eagles += be.eagles;
         return { pts: res.points, incomplete: !res.complete, modeB: res.mode === 'B' };
       });
       return {
         id: p.id, name: GT.displayName(p), you: me && me.id === p.id,
         points: anyScore ? points : null, roundPts: roundPts,
+        birdies: birdies, eagles: eagles,
         rounds: played, incomplete: anyScore && (played < rounds.length || !allComplete),
         modeB: anyB, hasScore: anyScore
       };
     }).filter(function (r) { return r.hasScore; });
+    var showEagles = rows.some(function (r) { return r.eagles > 0; });
 
     if (!rows.length) {
       app.appendChild(GT.emptyState('🏆', 'No scores in yet'));
@@ -398,7 +425,9 @@
     ].concat(rounds.map(function (round) {
       return h('th.rcol', { title: round.courseName || ('Round ' + round.index) }, 'R' + round.index);
     })).concat([
-      header('Total', 'points', st, onSort, '.total')
+      header('Total', 'points', st, onSort, '.total'),
+      header('Birdies', 'birdies', st, onSort),
+      showEagles ? header('Eagles', 'eagles', st, onSort) : null
     ]));
 
     var body = rows.map(function (r) {
@@ -407,6 +436,8 @@
         cells.push(h('td.rcol', {}, !rp ? '–' : (rp.pts == null ? '–' : (rp.pts + (rp.incomplete ? '*' : '')))));
       });
       cells.push(h('td.hi.total', {}, r.points == null ? '—' : r.points));
+      cells.push(h('td', {}, r.birdies));
+      if (showEagles) cells.push(h('td', {}, r.eagles));
       return h('tr.lb-row' + (r.you ? '.you-row' : ''), {
         onclick: function () { GT.router.go('viewplayer', [r.id]); }
       }, cells);
@@ -418,8 +449,8 @@
   }
 
   function defaultDir(key) {
-    // Lower is better for stroke columns; higher is better for points.
-    if (key === 'points') return 'desc';
+    // Lower is better for stroke columns; higher is better for points/birdies/eagles.
+    if (key === 'points' || key === 'birdies' || key === 'eagles') return 'desc';
     if (key === 'name') return 'asc';
     if (key === 'hi') return 'asc';
     return 'asc'; // gross/net/ch ascending
