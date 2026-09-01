@@ -133,6 +133,19 @@
   }
 
   /**
+   * Sum of the best `bestOf` values in pointsArray (nulls/undefined — rounds
+   * with no score yet — are ignored, never counted as a zero). A falsy
+   * `bestOf`, or one that's >= the number of scored rounds, just sums
+   * everything (nothing to discard).
+   */
+  function bestOfTotal(pointsArray, bestOf) {
+    var vals = (pointsArray || []).filter(function (p) { return p != null; });
+    var sorted = bestOf ? vals.slice().sort(function (a, b) { return b - a; }) : vals;
+    var kept = bestOf ? sorted.slice(0, bestOf) : sorted;
+    return kept.reduce(function (sum, v) { return sum + v; }, 0);
+  }
+
+  /**
    * Validate a set of stroke indexes is a complete 1..n with no duplicates
    * (PRD 5A.4). Returns { ok:boolean, message:string }.
    */
@@ -304,6 +317,7 @@
     stablefordLabel: stablefordLabel,
     parTotal: parTotal,
     computeRound: computeRound,
+    bestOfTotal: bestOfTotal,
     validateStrokeIndex: validateStrokeIndex,
     validatePar: validatePar,
     groupSizes: groupSizes,

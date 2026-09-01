@@ -389,16 +389,18 @@
     app.appendChild(h('p.page-sub', {}, 'Handicap Index ' + GT.fmtHi(player.handicapIndex) +
       (player.cdhId ? ' · CDH ' + player.cdhId : '')));
 
+    var bestOf = db.getTournament().bestOfRounds || 0;
     var rounds = db.getRounds().filter(function (rd) { return rd.configured; });
-    var totGross = 0, totPoints = 0, played = 0, anyScore = false;
+    var totGross = 0, played = 0, anyScore = false, roundPoints = [];
     rounds.forEach(function (rd) {
       var res = util.result(rd, player);
-      if (res.hasScore) { anyScore = true; played++; if (res.gross != null) totGross += res.gross; if (res.points != null) totPoints += res.points; }
+      if (res.hasScore) { anyScore = true; played++; if (res.gross != null) totGross += res.gross; roundPoints.push(res.points); }
     });
+    var totPoints = golf.bestOfTotal(roundPoints, bestOf);
 
     if (anyScore) {
       app.appendChild(h('div.card.grid3', {}, [
-        h('div.pill-stat', {}, [h('div.v', {}, totPoints), h('div.k', {}, 'Total Points')]),
+        h('div.pill-stat', {}, [h('div.v', {}, totPoints), h('div.k', {}, bestOf ? 'Total (best ' + bestOf + ')' : 'Total Points')]),
         h('div.pill-stat', {}, [h('div.v', {}, totGross), h('div.k', {}, 'Total Gross')]),
         h('div.pill-stat', {}, [h('div.v', {}, played + '/' + rounds.length), h('div.k', {}, 'Rounds')])
       ]));

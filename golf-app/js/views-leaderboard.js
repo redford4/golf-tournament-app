@@ -56,6 +56,22 @@
     });
   };
 
+  // Given an array of round entries (each either null/no-score, or an object
+  // carrying a numeric `key` field), flag the lowest-scoring ones beyond
+  // `bestOf` as `.dropped = true` in place, so the UI can show which rounds
+  // didn't count toward the total. No-op when `bestOf` is off or there
+  // aren't more scored rounds than `bestOf` to begin with.
+  function markDropped(entries, bestOf, key) {
+    key = key || 'points';
+    var scored = [];
+    entries.forEach(function (e, i) { if (e && e[key] != null) scored.push({ i: i, v: e[key] }); });
+    if (!bestOf || scored.length <= bestOf) return;
+    var kept = {};
+    scored.slice().sort(function (a, b) { return b.v - a.v; }).slice(0, bestOf)
+      .forEach(function (s) { kept[s.i] = true; });
+    scored.forEach(function (s) { entries[s.i].dropped = !kept[s.i]; });
+  }
+
   // Final standings, sorted best-first with the tie-break chain:
   // total Stableford → last round Stableford → last round back-9 Stableford.
   GT.finalStandings = function () {
@@ -63,16 +79,18 @@
     var rounds = db.getRoundsFor(t.id).filter(function (r) { return r.configured; });
     var members = db.getPlayers();
     var lastRound = rounds[rounds.length - 1];
+    var bestOf = t.bestOfRounds || 0;
 
     var rows = members.map(function (p) {
-      var total = 0, gross = 0, net = 0, anyNet = false;
+      var gross = 0, net = 0, anyNet = false;
       var perRound = rounds.map(function (r) {
         var res = util.result(r, p);
-        if (res.points != null) total += res.points;
         if (res.gross != null) gross += res.gross;
         if (res.net != null) { net += res.net; anyNet = true; }
         return { round: r, points: res.points, gross: res.gross, net: res.net, mode: res.mode, complete: res.complete, courseHcp: res.courseHcp };
       });
+      markDropped(perRound, bestOf);
+      var total = GT.golf.bestOfTotal(perRound.map(function (pr) { return pr.points; }), bestOf);
       var lr = util.result(lastRound, p);
       var lrBack9 = null;
       if (lr.mode === 'A' && lr.record) {
@@ -98,7 +116,7 @@
       else { r.pos = i + 1; lastPos = r.pos; r.tie = false; }
       lastKey = key(r);
     });
-    return { rows: rows, rounds: rounds, lastRound: lastRound };
+    return { rows: rows, rounds: rounds, lastRound: lastRound, bestOf: bestOf };
   };
 
   // Derive a round's groups from the CURRENT standings in reverse order (worst
@@ -207,7 +225,9 @@
       h('div.rh-label', {}, preview ? 'CURRENT LEADER' : 'CHAMPION'),
       h('div.rh-name', {}, GT.displayName(winner.player)),
       h('div.rh-points', {}, [h('span.rh-num', {}, String(winner.total)), h('span.rh-unit', {}, ' pts')]),
-      h('div.rh-sub', {}, winner.total + ' Stableford points across ' + data.rounds.length + ' round' + (data.rounds.length === 1 ? '' : 's')),
+      h('div.rh-sub', {}, winner.total + ' Stableford points — ' + (data.bestOf
+        ? 'best ' + data.bestOf + ' of ' + data.rounds.length + ' rounds'
+        : 'across ' + data.rounds.length + ' round' + (data.rounds.length === 1 ? '' : 's'))),
       wonOnCountback ? h('div.rh-countback', {}, '✦ Won on countback (better final round)') : null,
       h('div.rh-tourn', {}, t.name)
     ]));
@@ -230,12 +250,16 @@
     // Winner's round-by-round breakdown
     var breakdown = h('div.card', {}, [h('div.muted', { style: { fontWeight: 600, marginBottom: '8px' } }, '🏅 ' + GT.displayName(winner.player) + ' — winning card')]);
     var rowsEls = winner.perRound.map(function (pr) {
-      return h('div.kv', {}, [
+      return h('div.kv' + (pr.dropped ? '.dropped-round' : ''), {}, [
         h('span.k', {}, 'R' + pr.round.index + ' · ' + (pr.round.courseName || 'Course')),
-        h('span.v', {}, (pr.points != null ? pr.points + ' pts' : '—') + (pr.gross != null ? ' · ' + pr.gross + ' gross' : ''))
+        h('span.v', {}, (pr.points != null ? pr.points + ' pts' : '—') + (pr.gross != null ? ' · ' + pr.gross + ' gross' : '') + (pr.dropped ? ' · dropped' : ''))
       ]);
     });
     breakdown.appendChild(h('div', {}, rowsEls));
+    if (data.bestOf) {
+      breakdown.appendChild(h('div.muted', { style: { fontSize: '.78rem', marginTop: '4px' } },
+        'Best ' + data.bestOf + ' of ' + data.rounds.length + ' rounds count — dropped rounds shown above.'));
+    }
     breakdown.appendChild(h('div.kv', { style: { borderTop: '2px solid var(--green)', marginTop: '4px' } }, [
       h('span.k', { style: { fontWeight: 700 } }, 'Total'),
       h('span.v', { style: { fontWeight: 800, color: 'var(--green-dark)' } }, winner.total + ' pts · ' + winner.gross + ' gross' + (winner.net != null ? ' · ' + winner.net + ' net' : ''))
@@ -384,18 +408,20 @@
   // ---- Overall leaderboard ----------------------------------------------
   function renderOverall(app, rounds) {
     var me = GT.state.currentPlayer();
+    var bestOf = (db.getTournament().bestOfRounds) || 0;
     var rows = db.getPlayers().map(function (p) {
-      var points = 0, played = 0, anyScore = false, allComplete = true, anyB = false, birdies = 0, eagles = 0;
+      var played = 0, anyScore = false, allComplete = true, anyB = false, birdies = 0, eagles = 0;
       var roundPts = rounds.map(function (round) {
         var res = util.result(round, p);
         if (!res.hasScore) { allComplete = false; return null; }
         anyScore = true; played++;
-        if (res.points != null) points += res.points;
         if (!res.complete) allComplete = false;
         if (res.mode === 'B') anyB = true;
         var be = grossBE(round, res.record); birdies += be.birdies; eagles += be.eagles;
         return { pts: res.points, incomplete: !res.complete, modeB: res.mode === 'B' };
       });
+      markDropped(roundPts, bestOf, 'pts');
+      var points = GT.golf.bestOfTotal(roundPts.map(function (rp) { return rp && rp.pts; }), bestOf);
       return {
         id: p.id, name: GT.displayName(p), you: me && me.id === p.id,
         points: anyScore ? points : null, roundPts: roundPts,
@@ -433,7 +459,8 @@
     var body = rows.map(function (r) {
       var cells = [h('td.pos', {}, (r._tie ? '=' : '') + r._pos), nameCell(r)];
       r.roundPts.forEach(function (rp) {
-        cells.push(h('td.rcol', {}, !rp ? '–' : (rp.pts == null ? '–' : (rp.pts + (rp.incomplete ? '*' : '')))));
+        cells.push(h('td.rcol' + (rp && rp.dropped ? '.dropped' : ''), { title: rp && rp.dropped ? 'Dropped — not counted toward Total' : '' },
+          !rp ? '–' : (rp.pts == null ? '–' : (rp.pts + (rp.incomplete ? '*' : '')))));
       });
       cells.push(h('td.hi.total', {}, r.points == null ? '—' : r.points));
       cells.push(h('td', {}, r.birdies));
@@ -445,7 +472,7 @@
     app.appendChild(h('div.card', { style: { overflowX: 'auto' } }, h('table.lb', {}, [h('thead', {}, [head]), h('tbody', {}, body)])));
     var ob = GT.bonus && GT.bonus.board(rounds, { title: 'Bonuses', showRound: true });
     if (ob) app.appendChild(ob);
-    legend(app, 'overall');
+    legend(app, 'overall', bestOf);
   }
 
   function defaultDir(key) {
@@ -456,12 +483,16 @@
     return 'asc'; // gross/net/ch ascending
   }
 
-  function legend(app, which) {
+  function legend(app, which, bestOf) {
     app.appendChild(h('div.note.note-blue', { style: { marginTop: '10px', fontSize: '.82rem' } },
       which === 'round' ? '👆 Tap any player to view their scorecard for this round.'
                         : '👆 Tap any player to view their rounds and scorecards.'));
+    var overallNote = which === 'overall'
+      ? (bestOf ? 'R1–Rn = Stableford points per round · Total counts each player’s best ' + bestOf + ' round' + (bestOf === 1 ? '' : 's') + ' (dimmed = dropped) · '
+                : 'R1–Rn = Stableford points per round · Total is the sum · ')
+      : '';
     app.appendChild(h('div.muted', { style: { fontSize: '.78rem', marginTop: '8px' } },
-      (which === 'overall' ? 'R1–Rn = Stableford points per round · Total is the sum · ' : '') +
+      overallNote +
       '* incomplete round · S = summary entry · =n tied position · tap Player or Total to sort'));
   }
 })(window.GT = window.GT || {});

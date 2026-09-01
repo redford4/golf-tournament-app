@@ -45,6 +45,7 @@
       id: data.id || uid('tourn'),
       name: data.name || 'New Tournament',
       numRounds: data.numRounds || 4,
+      bestOfRounds: data.bestOfRounds || 0, // 0 = count every round; else "best N of numRounds"
       adminCode: data.adminCode || '',
       joinCode: data.joinCode || '',
       estimateNetForSummary: !!data.estimateNetForSummary,

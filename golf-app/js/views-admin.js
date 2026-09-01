@@ -104,9 +104,18 @@
       numRounds: h('input', { type: 'number', min: '1', value: t.numRounds }),
       adminCode: h('input', { type: 'text', value: t.adminCode, autocapitalize: 'off', spellcheck: 'false' }),
       estimate: h('input', { type: 'checkbox' }),
-      sessionHours: h('input', { type: 'number', min: '1', value: t.sessionHours })
+      sessionHours: h('input', { type: 'number', min: '1', value: t.sessionHours }),
+      bestOfEnabled: h('input', { type: 'checkbox' }),
+      bestOfCount: h('input', { type: 'number', min: '1', max: String(t.numRounds), value: t.bestOfRounds || Math.max(1, t.numRounds - 1) })
     };
     f.estimate.checked = !!t.estimateNetForSummary;
+    f.bestOfEnabled.checked = !!t.bestOfRounds;
+
+    var bestOfRow = h('div.field', { style: { marginTop: '8px', display: f.bestOfEnabled.checked ? '' : 'none' } },
+      [h('label', {}, 'Rounds to count'), f.bestOfCount]);
+    f.bestOfEnabled.addEventListener('change', function () {
+      bestOfRow.style.display = f.bestOfEnabled.checked ? '' : 'none';
+    });
 
     // Colour theme picker (live preview).
     var chosenTheme = t.theme || 'green';
@@ -129,9 +138,15 @@
       if (!name) { GT.toast('Tournament name is required.', 'error'); return; }
       if (!nr || nr < 1) { GT.toast('Number of rounds must be at least 1.', 'error'); return; }
       if (!ac) { GT.toast('An admin code is required.', 'error'); return; }
+      var bestOf = 0;
+      if (f.bestOfEnabled.checked) {
+        bestOf = parseInt(f.bestOfCount.value, 10);
+        if (!bestOf || bestOf < 1) { GT.toast('Rounds to count must be at least 1.', 'error'); return; }
+        if (bestOf >= nr) { GT.toast('Rounds to count must be less than the number of rounds — otherwise every round already counts.', 'error'); return; }
+      }
       db.updateTournament({ name: name, numRounds: nr, adminCode: ac,
         estimateNetForSummary: f.estimate.checked, sessionHours: parseInt(f.sessionHours.value, 10) || 4,
-        theme: chosenTheme });
+        theme: chosenTheme, bestOfRounds: bestOf });
       db.logAdmin('Updated tournament settings');
       GT.toast('Settings saved', 'success');
       GT.router.go('admin');
@@ -141,6 +156,12 @@
       h('div.field', {}, [h('label', {}, 'Tournament Name'), f.name]),
       h('div.field', {}, [h('label', {}, 'Number of Rounds'), f.numRounds,
         h('div.hint', {}, 'Adding rounds creates new empty round slots.')]),
+      h('div.field', {}, [
+        h('label', { style: { display: 'flex', alignItems: 'center', gap: '10px' } }, [f.bestOfEnabled,
+          h('span', {}, 'Only count best rounds toward the overall Total')]),
+        bestOfRow,
+        h('div.hint', {}, 'When on, each player’s Total on the Overall leaderboard (and the final winner) is their best-scoring rounds only — the rest are dropped.')
+      ]),
       h('div.field', {}, [h('label', {}, 'Admin Code (you)'), f.adminCode,
         h('div.hint', {}, 'Used to manage this tournament. Players don’t need a code — they join from their list.')]),
       h('div.field', {}, [

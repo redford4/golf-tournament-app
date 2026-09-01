@@ -294,6 +294,7 @@ table.lb td.hi { font-weight: 700; color: var(--green-dark); }
 table.lb th.rcol, table.lb td.rcol { min-width: 30px; padding-left: 6px; padding-right: 6px; color: var(--muted); }
 table.lb th.total, table.lb td.total { border-left: 2px solid var(--line); }
 table.lb td.total { font-weight: 800; color: var(--green-dark); }
+table.lb td.rcol.dropped { opacity: .4; text-decoration: line-through; }
 .you-row { background: var(--green-light) !important; }
 
 /* ---- Misc ---- */
@@ -304,6 +305,8 @@ table.lb td.total { font-weight: 800; color: var(--green-dark); }
 .kv:last-child { border-bottom: 0; }
 .kv .k { color: var(--muted); }
 .kv .v { font-weight: 600; }
+.kv.dropped-round { opacity: .5; }
+.kv.dropped-round .v { text-decoration: line-through; font-weight: 500; }
 .note { font-size: .85rem; padding: 10px 12px; border-radius: 10px; }
 .note-amber { background: var(--amber-bg); color: #7a4f00; }
 .note-blue { background: #e4f0f8; color: #11486e; }
